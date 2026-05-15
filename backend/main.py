@@ -1,12 +1,18 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import sqlite3
 import os
-from typing import List
+import sqlite3
+import json
+import re
+import requests
+import datetime
+import urllib3
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 
-app = FastAPI(title="IPS Integration Dashboard API")
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Setup CORS for local development
+app = FastAPI(title="Nuctech IPS Dashboard API")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,19 +21,115 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Configuration ---
 DB_PATH = r"C:\Nuctech_Services\ServiceBPM\bpm.db"
+# Fallback for local testing
+if not os.path.exists(DB_PATH):
+    DB_PATH = r"d:\Source Codes\Nuctech\Server PC\Nuctech_services\ServiceBPM\bpm.db"
 
+BPM_API_URL = "http://192.111.111.80:997"
+IDR_API_URL = "http://192.111.111.80:47361"
+
+def get_db_connection():
+    if not os.path.exists(DB_PATH):
+        raise HTTPException(status_code=500, detail="Database file not found")
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# --- SOAP Helpers ---
+def send_soap(url, payload):
+    headers = {'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': '""'}
+    try:
+        res = requests.post(url, data=payload, headers=headers, timeout=5)
+        return res.text
+    except Exception as e:
+        print(f"SOAP Request Error to {url}: {e}")
+        return ""
+
+def extract_xml_value(xml_str, tag_name):
+    match = re.search(f'<{tag_name}>(.*?)</{tag_name}>', xml_str, re.IGNORECASE | re.DOTALL)
+    if match:
+        val = match.group(1).strip()
+        cdata_match = re.search(r'<!\[CDATA\[(.*?)\]\]>', val, re.DOTALL)
+        if cdata_match:
+            return cdata_match.group(1).strip()
+        return val
+    return None
+
+def fetch_ips_realtime_data(container_picno):
+    ips_data = {
+        "scan_time": "-", "operator_id": "-", "conclusion": "-", "submit_time": "-",
+        "scan_direction": "-", "energy_mode": "-", "images": []
+    }
+    manifest_data = {
+        "container_no": "-", "container_type": "-", "container_weight": "-",
+        "vehicle_type": "-", "vehicle_serial": "-"
+    }
+    
+    if not container_picno:
+        return ips_data, manifest_data
+        
+    # 1. Get CheckUnitId
+    req_unit = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+    <SOAP-ENV:Body><Idr:GetCheckUnitId><wstrCheckUnit>{container_picno}</wstrCheckUnit></Idr:GetCheckUnitId></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+    
+    res_unit = send_soap(IDR_API_URL, req_unit)
+    check_unit_id = extract_xml_value(res_unit, "wstrCheckUnitId")
+    
+    if not check_unit_id:
+        return ips_data, manifest_data
+        
+    # 2. Get ImageId
+    req_img_id = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+    <SOAP-ENV:Body><Idr:GetImageId><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId></Idr:GetImageId></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+    
+    res_img_id = send_soap(IDR_API_URL, req_img_id)
+    image_id = extract_xml_value(res_img_id, "wstrImageId")
+    
+    if not image_id:
+        return ips_data, manifest_data
+        
+    # 3. Get IdrRdbXml (Full Details)
+    req_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+    <SOAP-ENV:Body><Idr:GetIdrRdbXml><wstrImageId>{image_id}</wstrImageId></Idr:GetIdrRdbXml></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+    
+    res_xml = send_soap(IDR_API_URL, req_xml)
+    full_xml = extract_xml_value(res_xml, "wstrIdrRdbXml")
+    
+    if full_xml:
+        # Parse Manifest
+        c_no = extract_xml_value(full_xml, "container_no")
+        if c_no: manifest_data["container_no"] = c_no
+        v_serial = extract_xml_value(full_xml, "g_v_no")
+        if v_serial: manifest_data["vehicle_serial"] = v_serial
+        
+        # Parse Image Info
+        scan_time = extract_xml_value(full_xml, "SCANTIME")
+        if scan_time: ips_data["scan_time"] = scan_time
+        
+        dir_match = extract_xml_value(full_xml, "ScanDirection")
+        if dir_match: ips_data["scan_direction"] = "Forward" if dir_match == "1" else "Backward"
+        
+        energy_match = extract_xml_value(full_xml, "EnergyMode")
+        if energy_match: ips_data["energy_mode"] = energy_match
+        
+        # Find all <img> tags
+        img_matches = re.findall(r'<img>(.*?)</img>', full_xml)
+        ips_data["images"] = [img.strip() for img in img_matches if img.strip().endswith('.jpg')]
+        
+    return ips_data, manifest_data
+
+# --- API Endpoints ---
 @app.get("/api/tasks")
 def get_tasks(limit: int = 100, status: str = "all"):
-    if not os.path.exists(DB_PATH):
-        return {"error": "Database file not found"}
-        
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Ambil daftar task (Object) beserta status terakhirnya
         query = """
         SELECT 
             o.id,
@@ -70,21 +172,17 @@ def get_tasks(limit: int = 100, status: str = "all"):
 
 @app.get("/api/tasks/{obj_id}/details")
 def get_task_details(obj_id: int):
-    if not os.path.exists(DB_PATH):
-        return {"error": "Database file not found"}
-    
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 1. Object info
+        # 1. Object Info
         cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
         obj = cursor.fetchone()
         if not obj:
             conn.close()
-            return {"error": "Object not found"}
-        
+            raise HTTPException(status_code=404, detail="Task not found")
+            
         task_info = {
             "id": obj["id"],
             "task_id": obj["_id"],
@@ -93,11 +191,11 @@ def get_task_details(obj_id: int):
             "modify_time": obj["modifyTime"],
         }
         
-        # 2. Object properties (result, etc)
+        # 2. Properties
         cursor.execute("SELECT name, value FROM ObjProp WHERE objId = ?", (obj_id,))
-        props = {row["name"]: row["value"] for row in cursor.fetchall()}
+        props = {p['name']: p['value'] for p in cursor.fetchall()}
         
-        # 3. State history
+        # 3. State History
         cursor.execute("""
             SELECT s.seq, s.state, s.setTime, sp.name as prop_name, sp.value as prop_value
             FROM State s
@@ -114,37 +212,127 @@ def get_task_details(obj_id: int):
                 "set_time": row["setTime"],
                 "operator": row["prop_value"] if row["prop_name"] == "operator" else None,
             })
-        
-        # 4. Linked container (if truck)
+            
+        # 4. Container Link (if Truck)
         container = None
-        cursor.execute("""
-            SELECT o._id as container_id, o.model, o.createTime
-            FROM Link l
-            JOIN Object o ON l.objId2 = o.id
-            WHERE l.objId1 = ? AND l.model2 = 'container'
-        """, (obj_id,))
-        linked = cursor.fetchone()
-        if linked:
-            container = {
-                "container_id": linked["container_id"],
-                "model": linked["model"],
-                "create_time": linked["createTime"],
-            }
+        container_picno = None
         
+        if obj["model"].lower() == 'container':
+            container_picno = obj["_id"]
+        else:
+            cursor.execute("""
+                SELECT o._id as container_id, o.model, o.createTime
+                FROM Link l
+                JOIN Object o ON l.objId2 = o.id
+                WHERE l.objId1 = ? AND l.model2 = 'container'
+            """, (obj_id,))
+            linked = cursor.fetchone()
+            if linked:
+                container = {
+                    "container_id": linked["container_id"],
+                    "model": linked["model"],
+                    "create_time": linked["createTime"],
+                }
+                container_picno = linked["container_id"]
+                
         conn.close()
+        
+        # 5. Fetch IPS Data via SOAP
+        ips_data, manifest_data = fetch_ips_realtime_data(container_picno)
+        
         return {
             "task": task_info,
             "properties": props,
             "state_history": states,
             "container": container,
+            "ips_data": ips_data,
+            "manifest_data": manifest_data,
+            "container_picno": container_picno
         }
+        
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/")
-def read_root():
-    return {"message": "API is running. Go to /api/tasks to view the data."}
+@app.post("/api/tasks/{obj_id}/submit")
+def submit_task(obj_id: int):
+    """Auto Submit a task as 'No Suspect' via Nuctech SOAP APIs."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
+        obj = cursor.fetchone()
+        if not obj:
+            raise HTTPException(status_code=404, detail="Task not found")
+            
+        container_picno = None
+        if obj["model"].lower() == 'container':
+            container_picno = obj["_id"]
+        else:
+            cursor.execute("""
+                SELECT o._id as container_id FROM Link l JOIN Object o ON l.objId2 = o.id 
+                WHERE l.objId1 = ? AND l.model2 = 'container'
+            """, (obj_id,))
+            linked = cursor.fetchone()
+            if linked:
+                container_picno = linked["container_id"]
+                
+        if not container_picno:
+            raise HTTPException(status_code=400, detail="No container linked to this task.")
+            
+        # Get CheckUnitId
+        req_unit = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+        <SOAP-ENV:Body><Idr:GetCheckUnitId><wstrCheckUnit>{container_picno}</wstrCheckUnit></Idr:GetCheckUnitId></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        
+        res_unit = send_soap(IDR_API_URL, req_unit)
+        check_unit_id = extract_xml_value(res_unit, "wstrCheckUnitId")
+        
+        if not check_unit_id:
+            raise HTTPException(status_code=400, detail="Cannot find CheckUnitId in IDR Service. Scan might not be complete.")
+            
+        # 1. setState check.begin (BPM)
+        req_begin = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
+        <SOAP-ENV:Body><H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>begin</substate><stateProps><item><name>operator</name><value>AutoSubmit</value></item></stateProps></H986BPM:setState></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        send_soap(BPM_API_URL, req_begin)
+        
+        # 2. setProperty check_result = No Suspect (BPM)
+        req_prop = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
+        <SOAP-ENV:Body><H986BPM:setProperty><model>container</model><id>{container_picno}</id><name>check_result</name><value>No Suspect</value></H986BPM:setProperty></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        send_soap(BPM_API_URL, req_prop)
+        
+        # 3. CommitConclusion (IDR)
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        req_commit = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+        <SOAP-ENV:Body><Idr:CommitConclusion><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId><conclusioninfo><m-strID></m-strID><m-strCHECKUNITID>{container_picno}</m-strCHECKUNITID><m-strOPERATORID>AutoSubmit</m-strOPERATORID><m-strAPPID>check</m-strAPPID><m-strTYPE>No Suspect</m-strTYPE><m-strCONTENT>&lt;CONTENT&gt;&lt;CONTENT&gt;&lt;/CONTENT&gt;&lt;/CONTENT&gt;</m-strCONTENT><m-strOPERATIONTIME>{now_str}</m-strOPERATIONTIME></conclusioninfo></Idr:CommitConclusion></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        send_soap(IDR_API_URL, req_commit)
+        
+        # 4. setState check.end (BPM)
+        req_end = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
+        <SOAP-ENV:Body><H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>end</substate><stateProps><item><name>operator</name><value>AutoSubmit</value></item></stateProps></H986BPM:setState></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        send_soap(BPM_API_URL, req_end)
+        
+        return {"status": "success", "message": f"Successfully submitted {container_picno} as No Suspect."}
+        
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import sys
+    
+    # Fix for PyInstaller --noconsole 'NoneType' object has no attribute 'isatty'
+    if sys.stdout is None:
+        class DummyStream:
+            def write(self, *args, **kwargs): pass
+            def flush(self, *args, **kwargs): pass
+            def isatty(self): return False
+        sys.stdout = DummyStream()
+    if sys.stderr is None:
+        sys.stderr = DummyStream()
+
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None)

@@ -59,10 +59,20 @@
                     </div>
                 </div>
                 
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search Task ID...">
+                    <button class="btn btn-outline" id="searchBtn">🔍 Search</button>
+                </div>
+                
+                <button class="btn btn-primary" id="massSubmitBtn" style="background: linear-gradient(135deg, #00FF88 0%, #0088FF 100%); color: #000; border: none; font-weight: bold; margin-left: 15px; display: none;">
+                    ✅ Auto-Submit Selected (0)
+                </button>
+
                 <div class="table-container">
                     <table id="task-table">
                         <thead>
                             <tr>
+                                <th width="40"><input type="checkbox" id="selectAllCheckbox"></th>
                                 <th>#</th>
                                 <th>UUID / Task ID</th>
                                 <th>Tipe (Model)</th>
@@ -74,7 +84,7 @@
                         <tbody id="task-body">
                             <!-- Tasks will be injected here via JS -->
                             <tr>
-                                <td colspan="6" class="loading-state">
+                                <td colspan="7" class="loading-state">
                                     <div class="spinner"></div>
                                     <p>Memuat data dari bpm.db...</p>
                                 </td>

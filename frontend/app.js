@@ -41,20 +41,22 @@ async function fetchTasks() {
         const data = await response.json();
         
         if (data.error) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: #ff3366;">Error: ${data.error}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #ff3366;">Error: ${data.error}</td></tr>`;
             return;
         }
 
         const tasks = data.tasks;
         if (tasks.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: #9ba1a6;">Tidak ada task ditemukan di database.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #9ba1a6;">Tidak ada task ditemukan di database.</td></tr>`;
             return;
         }
 
         tbody.innerHTML = '';
         tasks.forEach((task, index) => {
             const tr = document.createElement('tr');
+            const result = task.properties?.result;
             tr.innerHTML = `
+                <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
                 <td>${index + 1}</td>
                 <td><span class="uuid-cell">${task.task_id}</span></td>
                 <td style="text-transform: capitalize;">${task.model || '-'}</td>
@@ -76,10 +78,11 @@ async function fetchTasks() {
                 tr.style.transform = 'translateY(0)';
             }, 10);
         });
+        updateCheckboxListeners();
 
     } catch (error) {
         console.error('Failed to fetch tasks:', error);
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: #ff3366;">Koneksi ke backend gagal. Pastikan server backend berjalan di port 8000.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #ff3366;">Koneksi ke backend gagal. Pastikan server backend berjalan di port 8000.</td></tr>`;
     } finally {
         setTimeout(() => {
             refreshBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.21l-5.6 5.6"/></svg> Refresh Manual`;
@@ -129,6 +132,82 @@ modal.addEventListener('click', (e) => {
 // Close modal on Escape key
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
+});
+
+async function manualSubmitTask(taskId) {
+    if (!confirm('Apakah Anda yakin ingin mensubmit task ini sebagai "No Suspect"? Ini akan memanipulasi API Nuctech.')) {
+        return;
+    }
+    try {
+        const response = await fetch(`http://192.111.111.80:8000/api/tasks/${taskId}/submit`, { method: 'POST' });
+        const data = await response.json();
+        if (response.ok) {
+            alert(data.message || 'Berhasil disubmit');
+            closeModal();
+            fetchTasks();
+        } else {
+            alert('Error: ' + (data.detail || data.error));
+        }
+    } catch (error) {
+        console.error('Error submitting:', error);
+        alert('Gagal menghubungi server.');
+    }
+}
+
+function updateCheckboxListeners() {
+    const checkboxes = document.querySelectorAll('.task-checkbox');
+    const massBtn = document.getElementById('massSubmitBtn');
+    if (!massBtn) return;
+    
+    function updateMassBtn() {
+        const checked = document.querySelectorAll('.task-checkbox:checked').length;
+        if (checked > 0) {
+            massBtn.style.display = 'inline-block';
+            massBtn.textContent = `✅ Auto-Submit Selected (${checked})`;
+        } else {
+            massBtn.style.display = 'none';
+        }
+    }
+    
+    checkboxes.forEach(cb => cb.addEventListener('change', updateMassBtn));
+    
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if(selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', (e) => {
+            checkboxes.forEach(cb => {
+                if(!cb.disabled) cb.checked = e.target.checked;
+            });
+            updateMassBtn();
+        });
+    }
+}
+
+document.getElementById('massSubmitBtn')?.addEventListener('click', async () => {
+    const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
+    if (checkedBoxes.length === 0) return;
+    if (!confirm(`Yakin ingin men-submit ${checkedBoxes.length} task terpilih secara otomatis?`)) return;
+    
+    const btn = document.getElementById('massSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Memproses...';
+    
+    let success = 0, fail = 0;
+    for (const cb of checkedBoxes) {
+        try {
+            const res = await fetch(`http://192.111.111.80:8000/api/tasks/${cb.dataset.id}/submit`, { method: 'POST' });
+            if (res.ok) success++;
+            else fail++;
+        } catch(e) {
+            fail++;
+        }
+    }
+    
+    alert(`Selesai! Berhasil: ${success}, Gagal: ${fail}`);
+    btn.disabled = false;
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) selectAllCheckbox.checked = false;
+    
+    fetchTasks();
 });
 
 async function openDetails(objId) {
@@ -191,7 +270,88 @@ async function openDetails(objId) {
             </div>`;
         }
         
-        // Section 3: State Timeline
+        // Section 3: Manifest / EDI Data
+        const manifest = data.manifest_data;
+        if (manifest) {
+            html += `
+            <div class="detail-section" style="border-color: rgba(64, 196, 255, 0.3); background: rgba(64, 196, 255, 0.05);">
+                <h4 style="color: #40C4FF;">📄 Data Manifest / EDI</h4>
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <span class="label">Container No</span>
+                        <span class="value" style="font-weight: bold; color: white;">${manifest.container_no}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Container Type</span>
+                        <span class="value">${manifest.container_type}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Container Weight</span>
+                        <span class="value">${manifest.container_weight}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Vehicle Type</span>
+                        <span class="value">${manifest.vehicle_type}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Vehicle Serial</span>
+                        <span class="value">${manifest.vehicle_serial}</span>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        // Section 4: IPS Inspection Data (if exists)
+        const ips = data.ips_data;
+        if (ips) {
+            html += `
+            <div class="detail-section" style="border-color: rgba(0, 255, 136, 0.3); background: rgba(0, 255, 136, 0.05);">
+                <h4 style="color: var(--status-ready);">🔍 Hasil Inspeksi IPS</h4>
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <span class="label">Waktu Scan X-Ray</span>
+                        <span class="value">${ips.scan_time.replace(/\.\d+/, '')}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Operator IPS</span>
+                        <span class="value" style="font-weight: bold;">${ips.operator_id}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Keputusan (Conclusion)</span>
+                        <span class="value state-badge state-ready" style="display:inline-block; margin-top:4px;">${ips.conclusion}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Waktu Keputusan (Submit)</span>
+                        <span class="value">${ips.submit_time.replace(/\.\d+/, '')}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Scan Direction</span>
+                        <span class="value">${ips.scan_direction}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">Energy Mode</span>
+                        <span class="value">${ips.energy_mode}</span>
+                    </div>
+                </div>`;
+                
+            if (ips.images && ips.images.length > 0) {
+                html += `<div style="margin-top: 15px;">
+                    <span class="label" style="display:block; margin-bottom:8px;">X-Ray Images</span>
+                    <div style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px;">`;
+                ips.images.forEach(img => {
+                    html += `<a href="${img}" target="_blank" style="text-decoration: none;">
+                        <div style="width: 100px; height: 60px; background: rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2);">
+                            <span class="material-symbols-outlined" style="font-size: 24px; color: rgba(255,255,255,0.5);">image</span>
+                        </div>
+                    </a>`;
+                });
+                html += `</div></div>`;
+            }
+            
+            html += `</div>`;
+        }
+        
+        // Section 5: State Timeline
         html += `
         <div class="detail-section">
             <h4>🔄 Riwayat Status (State Timeline)</h4>
@@ -211,7 +371,12 @@ async function openDetails(objId) {
                 </div>`;
         });
         
-        html += '</div></div>';
+        html += `</div></div>
+        <div style="margin-top: 20px; display: flex; justify-content: flex-end; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+            <button class="btn btn-primary" onclick="manualSubmitTask(${task.id})" style="background: linear-gradient(135deg, #00FF88 0%, #0088FF 100%); color: #000; border: none; font-weight: bold; padding: 10px 20px; border-radius: 6px; cursor: pointer;">
+                ✅ Auto-Submit "No Suspect"
+            </button>
+        </div>`;
         
         modalBody.innerHTML = html;
         
