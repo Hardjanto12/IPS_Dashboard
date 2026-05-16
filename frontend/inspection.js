@@ -2,8 +2,9 @@ const urlParams = new URLSearchParams(window.location.search);
 const taskId = urlParams.get('id');
 
 if (!taskId) {
-    alert("Task ID tidak ditemukan di URL!");
-    window.close();
+    Swal.fire('Error', 'Task ID tidak ditemukan di URL!', 'error').then(() => {
+        window.close();
+    });
 }
 
 document.getElementById('task-id-badge').textContent = `Memuat Task #${taskId}...`;
@@ -39,24 +40,24 @@ async function loadData() {
         
         if (ips.images) {
             ips.images.forEach(img => {
-                allImages.push({url: img, type: 'X-Ray', badgeColor: 'rgba(255,255,255,0.3)'});
+                allImages.push({url: img, type: 'X-Ray', badgeColor: '#E2E8F0'});
             });
         }
         
         if (ips.ccr_images) {
             ips.ccr_images.forEach(img => {
-                allImages.push({url: img, type: 'CCR', badgeColor: 'rgba(0,240,255,0.7)'});
+                allImages.push({url: img, type: 'CCR', badgeColor: '#DBEAFE'});
             });
         }
         
         if (ips.camera_images) {
             ips.camera_images.forEach(img => {
-                allImages.push({url: img, type: 'Camera', badgeColor: 'rgba(255,204,0,0.7)'});
+                allImages.push({url: img, type: 'Camera', badgeColor: '#FEF3C7'});
             });
         }
         
         if (allImages.length === 0) {
-            carousel.innerHTML = `<div style="width: 100%; text-align: center; line-height: 100px; color: var(--text-secondary);">Belum ada gambar yang tersedia.</div>`;
+            carousel.innerHTML = `<div style="width: 100%; text-align: center; line-height: 100px; color: var(--text-muted);">Belum ada gambar yang tersedia.</div>`;
             document.getElementById('main-img-badge').textContent = 'No Image Found';
             return;
         }
@@ -74,7 +75,7 @@ async function loadData() {
         selectImage(0, carousel.firstChild);
         
     } catch (e) {
-        alert("Gagal memuat data: " + e.message);
+        Swal.fire('Gagal Memuat Data', e.message, 'error');
     }
 }
 
@@ -135,12 +136,21 @@ async function submitInspection() {
     };
     
     if (!payload.container_no) {
-        alert("Nomor Kontainer tidak boleh kosong!");
+        Swal.fire('Peringatan', 'Nomor Kontainer tidak boleh kosong!', 'warning');
         document.getElementById('inp-container-no').focus();
         return;
     }
     
-    if (!confirm(`Anda akan menyimpan perubahan dan men-submit task ini dengan status "${payload.conclusion}". Lanjutkan?`)) return;
+    const result = await Swal.fire({
+        title: 'Konfirmasi Submit',
+        text: `Anda akan menyimpan perubahan dan men-submit task ini dengan status "${payload.conclusion}". Lanjutkan?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#2563EB',
+        confirmButtonText: 'Ya, Lanjutkan'
+    });
+    
+    if (!result.isConfirmed) return;
     
     btn.innerHTML = `<span class="spinner" style="width:16px; height:16px; margin:0; border-width:2px; border-top-color:#000;"></span> Menyimpan...`;
     btn.disabled = true;
@@ -155,18 +165,19 @@ async function submitInspection() {
         const data = await res.json();
         
         if (res.ok) {
-            alert("Berhasil! Data telah tersimpan di server Nuctech dan task disubmit.");
-            if (window.opener && !window.opener.closed) {
-                window.opener.fetchTasks();
-            }
-            window.close();
+            Swal.fire('Berhasil!', 'Data telah tersimpan di server Nuctech dan task disubmit.', 'success').then(() => {
+                if (window.opener && !window.opener.closed) {
+                    window.opener.fetchTasks();
+                }
+                window.close();
+            });
         } else {
-            alert("Error: " + (data.detail || data.error));
+            Swal.fire('Error', data.detail || data.error, 'error');
             btn.innerHTML = originalText;
             btn.disabled = false;
         }
     } catch (e) {
-        alert("Koneksi gagal: " + e.message);
+        Swal.fire('Gagal', 'Koneksi gagal: ' + e.message, 'error');
         btn.innerHTML = originalText;
         btn.disabled = false;
     }

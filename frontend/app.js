@@ -64,8 +64,10 @@ async function fetchTasks() {
                 <td><span class="state-badge ${getStateClass(task.state)}">${task.state || 'UNKNOWN'}</span></td>
                 <td style="color: #9ba1a6; font-size: 0.85rem;">${formatTime(task.create_time)}</td>
                 <td>
-                    <button class="btn action-btn" onclick="openDetails(${task.id})">Details</button>
-                    <button class="btn action-btn" style="background: rgba(0,240,255,0.1); border-color: rgba(0,240,255,0.3); color: var(--accent); margin-left: 5px;" onclick="window.open('inspection.html?id=${task.id}', '_blank')">Check</button>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn action-btn" onclick="openDetails(${task.id})">Details</button>
+                        <button class="btn action-btn primary-btn" onclick="window.open('inspection.html?id=${task.id}', '_blank')">Check</button>
+                    </div>
                 </td>
             `;
             // Add subtle animation for new rows
@@ -138,22 +140,31 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function manualSubmitTask(taskId) {
-    if (!confirm('Apakah Anda yakin ingin mensubmit task ini sebagai "No Suspect"? Ini akan memanipulasi API Nuctech.')) {
-        return;
-    }
+    const result = await Swal.fire({
+        title: 'Submit Task?',
+        text: 'Apakah Anda yakin ingin mensubmit task ini sebagai "No Suspect"? Ini akan memanipulasi API Nuctech.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#2563EB',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Ya, Submit!'
+    });
+    
+    if (!result.isConfirmed) return;
+
     try {
         const response = await fetch(`http://192.111.111.80:8000/api/tasks/${taskId}/submit`, { method: 'POST' });
         const data = await response.json();
         if (response.ok) {
-            alert(data.message || 'Berhasil disubmit');
+            Swal.fire('Berhasil!', data.message || 'Task berhasil disubmit.', 'success');
             closeModal();
             fetchTasks();
         } else {
-            alert('Error: ' + (data.detail || data.error));
+            Swal.fire('Error', data.detail || data.error, 'error');
         }
     } catch (error) {
         console.error('Error submitting:', error);
-        alert('Gagal menghubungi server.');
+        Swal.fire('Gagal', 'Koneksi ke server gagal.', 'error');
     }
 }
 
@@ -207,7 +218,17 @@ async function fetchContainerNumbers(tasks) {
 document.getElementById('massSubmitBtn')?.addEventListener('click', async () => {
     const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
     if (checkedBoxes.length === 0) return;
-    if (!confirm(`Yakin ingin men-submit ${checkedBoxes.length} task terpilih secara otomatis?`)) return;
+    
+    const confirmResult = await Swal.fire({
+        title: 'Konfirmasi Mass Submit',
+        text: `Yakin ingin men-submit ${checkedBoxes.length} task terpilih secara otomatis?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#2563EB',
+        confirmButtonText: 'Submit Semua'
+    });
+    
+    if (!confirmResult.isConfirmed) return;
     
     const btn = document.getElementById('massSubmitBtn');
     btn.disabled = true;
@@ -224,7 +245,7 @@ document.getElementById('massSubmitBtn')?.addEventListener('click', async () => 
         }
     }
     
-    alert(`Selesai! Berhasil: ${success}, Gagal: ${fail}`);
+    Swal.fire('Selesai', `Berhasil: ${success}\nGagal: ${fail}`, success > 0 ? 'success' : 'warning');
     btn.disabled = false;
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
     if (selectAllCheckbox) selectAllCheckbox.checked = false;
@@ -296,12 +317,12 @@ async function openDetails(objId) {
         const manifest = data.manifest_data;
         if (manifest) {
             html += `
-            <div class="detail-section" style="border-color: rgba(64, 196, 255, 0.3); background: rgba(64, 196, 255, 0.05);">
-                <h4 style="color: #40C4FF;">📄 Data Manifest / EDI</h4>
+            <div class="detail-section">
+                <h4 style="color: var(--accent);">📄 Data Manifest / EDI</h4>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <span class="label">Container No</span>
-                        <span class="value" style="font-weight: bold; color: white;">${manifest.container_no}</span>
+                        <span class="value" style="font-weight: bold;">${manifest.container_no}</span>
                     </div>
                     <div class="detail-item">
                         <span class="label">Container Type</span>
@@ -327,7 +348,7 @@ async function openDetails(objId) {
         const ips = data.ips_data;
         if (ips) {
             html += `
-            <div class="detail-section" style="border-color: rgba(0, 255, 136, 0.3); background: rgba(0, 255, 136, 0.05);">
+            <div class="detail-section">
                 <h4 style="color: var(--status-ready);">🔍 Hasil Inspeksi IPS</h4>
                 <div class="detail-grid">
                     <div class="detail-item">
@@ -379,8 +400,8 @@ async function openDetails(objId) {
         });
         
         html += `</div></div>
-        <div style="margin-top: 20px; display: flex; justify-content: flex-end; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
-            <button class="btn btn-primary" onclick="manualSubmitTask(${task.id})" style="background: linear-gradient(135deg, #00FF88 0%, #0088FF 100%); color: #000; border: none; font-weight: bold; padding: 10px 20px; border-radius: 6px; cursor: pointer;">
+        <div style="margin-top: 20px; display: flex; justify-content: flex-end; border-top: 1px solid var(--border-color); padding-top: 15px;">
+            <button class="btn primary-btn" onclick="manualSubmitTask(${task.id})">
                 ✅ Auto-Submit "No Suspect"
             </button>
         </div>`;
