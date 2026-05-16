@@ -68,6 +68,12 @@ Karena frontend disajikan secara *statis* oleh FastAPI (ter-mount di `/`), Anda 
 
 *(Atau Anda bisa langsung mengklik dua kali `frontend/index.html` jika hanya ingin melihat antarmuka murni secara lokal, namun beberapa fitur API mungkin akan terblokir oleh CORS jika tidak disajikan lewat server).*
 
+**🖥️ Cara Mengakses dari PC Lain (Client):**
+Anda **tidak perlu menginstal** apapun di PC lain. Cukup pastikan PC lain tersebut terhubung dalam satu jaringan (LAN/Network) dengan PC Server, lalu buka peramban (*browser*) seperti Chrome/Edge dan ketikkan alamat IP dari PC Server:
+👉 **`http://192.111.111.80:8000`**
+
+Jika Anda *benar-benar* ingin memisahkan *frontend* dan menjalankannya tanpa *browser* dari server, Anda cukup **menyalin folder `frontend/`** ke PC lain dan membuka `index.html`. Karena semua fungsi koneksi di dalam Javascript sudah menunjuk ke IP server `192.111.111.80:8000`, maka *dashboard* akan tetap berfungsi mencari server Nuctech selama jaringan terhubung!
+
 ### 3. Kompilasi Executable (PyInstaller)
 Jika Anda melakukan perubahan pada *backend* (Python) dan ingin mengemas ulang aplikasi menjadi file `.exe` yang mandiri:
 

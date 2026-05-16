@@ -8,6 +8,9 @@ import urllib3
 import html
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
+import sys
 from typing import Optional
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -501,6 +504,31 @@ def submit_task(obj_id: int):
         
     finally:
         conn.close()
+
+# --- Serve Frontend (Dashboard) ---
+if getattr(sys, 'frozen', False):
+    application_path = os.path.dirname(sys.executable)
+else:
+    application_path = os.path.dirname(os.path.abspath(__file__))
+
+frontend_path = os.path.abspath(os.path.join(application_path, "../frontend"))
+
+class CachedStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        # Tambahkan instruksi ke browser untuk menyimpan aset (JS/CSS) selama 1 jam
+        response.headers["Cache-Control"] = "public, max-age=3600"
+        return response
+
+if os.path.exists(frontend_path):
+    app.mount("/dashboard", CachedStaticFiles(directory=frontend_path, html=True), name="frontend")
+    
+    @app.get("/")
+    def root():
+        return RedirectResponse(url="/dashboard/index.html")
+else:
+    print(f"Warning: Frontend directory not found at {frontend_path}")
+
 
 if __name__ == "__main__":
     import uvicorn

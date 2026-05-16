@@ -83,6 +83,7 @@ async function fetchTasks() {
             }, 10);
         });
         updateCheckboxListeners();
+        performSearch();
         fetchContainerNumbers(tasks);
 
     } catch (error) {
@@ -196,6 +197,34 @@ function updateCheckboxListeners() {
     }
 }
 
+// ===== SEARCH FUNCTIONALITY =====
+const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
+
+function performSearch() {
+    if (!searchInput) return;
+    const query = searchInput.value.toLowerCase().trim();
+    const rows = tbody.querySelectorAll('tr');
+    
+    rows.forEach(row => {
+        if (row.cells.length < 8) return; // Skip error/info rows
+        
+        const taskId = row.querySelector('.uuid-cell')?.textContent.toLowerCase() || '';
+        const containerNo = row.cells[3]?.textContent.toLowerCase() || '';
+        
+        if (taskId.includes(query) || containerNo.includes(query)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+if (searchInput) {
+    searchInput.addEventListener('input', performSearch);
+    searchBtn.addEventListener('click', performSearch);
+}
+
 async function fetchContainerNumbers(tasks) {
     for (const task of tasks) {
         try {
@@ -213,6 +242,8 @@ async function fetchContainerNumbers(tasks) {
             if(cell) cell.textContent = 'Err';
         }
     }
+    // Re-apply search filter after container numbers are loaded
+    performSearch();
 }
 
 document.getElementById('massSubmitBtn')?.addEventListener('click', async () => {
