@@ -33,14 +33,14 @@
                     <div class="controls" style="display: flex; gap: 1rem; align-items: center;">
                         <div class="toggle-container" style="display: flex; align-items: center; gap: 0.5rem;">
                             <label class="switch">
-                                <input type="checkbox" id="auto-refresh-toggle" checked>
+                                <input type="checkbox" id="auto-refresh-toggle">
                                 <span class="slider round"></span>
                             </label>
                             <span style="font-size: 0.9rem; color: var(--text-secondary);">Auto Refresh</span>
                         </div>
                         <select id="status-filter" class="custom-select">
-                            <option value="all" selected>Semua Status</option>
-                            <option value="check.ready">🖥️ Di Layar IPS</option>
+                            <option value="all">Semua Status</option>
+                            <option value="check.ready" selected>🖥️ Di Layar IPS</option>
                             <option value="datasend.ready">📤 Proses Kirim</option>
                             <option value="datasend.end">✅ Terkirim</option>
                             <option value="preCheck.ready">⏳ Pre-Check</option>
@@ -75,6 +75,7 @@
                                 <th width="40"><input type="checkbox" id="selectAllCheckbox"></th>
                                 <th>#</th>
                                 <th>UUID / Task ID</th>
+                                <th>No. Container</th>
                                 <th>Tipe (Model)</th>
                                 <th>State (Status)</th>
                                 <th>Waktu Masuk</th>

@@ -1,0 +1,176 @@
+const urlParams = new URLSearchParams(window.location.search);
+const taskId = urlParams.get('id');
+
+if (!taskId) {
+    alert("Task ID tidak ditemukan di URL!");
+    window.close();
+}
+
+document.getElementById('task-id-badge').textContent = `Memuat Task #${taskId}...`;
+
+let allImages = [];
+
+async function loadData() {
+    try {
+        const res = await fetch(`http://192.111.111.80:8000/api/tasks/${taskId}/details`);
+        const data = await res.json();
+        
+        if (data.error) throw new Error(data.error);
+
+        const task = data.task;
+        const manifest = data.manifest_data || {};
+        const ips = data.ips_data || {};
+        
+        document.getElementById('task-id-badge').textContent = task.task_id;
+        
+        // Populate Form
+        document.getElementById('inp-container-no').value = manifest.container_no || '';
+        document.getElementById('inp-front-vehicle').value = manifest.vehicle_serial || '';
+        document.getElementById('inp-weight').value = manifest.container_weight || '';
+        
+        document.getElementById('inp-enter-time').value = formatTime(task.create_time);
+        document.getElementById('inp-scan-time').value = ips.scan_time ? ips.scan_time.replace(/\.\d+/, '') : '';
+        
+        // Populate Gallery
+        const carousel = document.getElementById('carousel-container');
+        carousel.innerHTML = '';
+        allImages = [];
+        let thumbIndex = 0;
+        
+        if (ips.images) {
+            ips.images.forEach(img => {
+                allImages.push({url: img, type: 'X-Ray', badgeColor: 'rgba(255,255,255,0.3)'});
+            });
+        }
+        
+        if (ips.ccr_images) {
+            ips.ccr_images.forEach(img => {
+                allImages.push({url: img, type: 'CCR', badgeColor: 'rgba(0,240,255,0.7)'});
+            });
+        }
+        
+        if (ips.camera_images) {
+            ips.camera_images.forEach(img => {
+                allImages.push({url: img, type: 'Camera', badgeColor: 'rgba(255,204,0,0.7)'});
+            });
+        }
+        
+        if (allImages.length === 0) {
+            carousel.innerHTML = `<div style="width: 100%; text-align: center; line-height: 100px; color: var(--text-secondary);">Belum ada gambar yang tersedia.</div>`;
+            document.getElementById('main-img-badge').textContent = 'No Image Found';
+            return;
+        }
+
+        allImages.forEach((imgObj, idx) => {
+            const thumb = document.createElement('div');
+            thumb.className = `thumbnail ${idx === 0 ? 'active' : ''}`;
+            thumb.style.backgroundImage = `url('${imgObj.url}')`;
+            thumb.innerHTML = `<span class="thumb-badge" style="background: ${imgObj.badgeColor}; color: #000;">${imgObj.type}</span>`;
+            thumb.onclick = () => selectImage(idx, thumb);
+            carousel.appendChild(thumb);
+        });
+
+        // Select first image by default
+        selectImage(0, carousel.firstChild);
+        
+    } catch (e) {
+        alert("Gagal memuat data: " + e.message);
+    }
+}
+
+function selectImage(index, thumbElement) {
+    // Update active class
+    const thumbnails = document.querySelectorAll('.thumbnail');
+    thumbnails.forEach(t => t.classList.remove('active'));
+    if(thumbElement) thumbElement.classList.add('active');
+
+    const imgObj = allImages[index];
+    if(!imgObj) return;
+
+    const mainImg = document.getElementById('main-image-display');
+    const mainBadge = document.getElementById('main-img-badge');
+    const loading = document.getElementById('main-image-loading');
+
+    // Show loading
+    mainImg.style.display = 'none';
+    loading.style.display = 'block';
+
+    mainBadge.textContent = imgObj.type;
+    mainBadge.style.background = imgObj.badgeColor;
+    mainBadge.style.color = '#000';
+
+    mainImg.onload = () => {
+        loading.style.display = 'none';
+        mainImg.style.display = 'block';
+    };
+    
+    mainImg.onerror = () => {
+        loading.style.display = 'none';
+        mainBadge.textContent = 'Error loading image';
+    };
+
+    mainImg.src = imgObj.url;
+}
+
+function formatTime(unix) {
+    if (!unix) return '-';
+    return new Date(unix * 1000).toLocaleString('en-CA', { hour12: false }).replace(',', '');
+}
+
+async function submitInspection() {
+    const btn = document.getElementById('btn-save-submit');
+    const originalText = btn.innerHTML;
+    
+    // Gather data
+    const payload = {
+        container_no: document.getElementById('inp-container-no').value,
+        front_vehicle: document.getElementById('inp-front-vehicle').value,
+        rear_vehicle: document.getElementById('inp-rear-vehicle').value,
+        driver: document.getElementById('inp-driver').value,
+        weight: document.getElementById('inp-weight').value,
+        country: document.getElementById('inp-country').value,
+        remark: document.getElementById('inp-remark').value,
+        conclusion: document.querySelector('input[name="conclusion"]:checked').value,
+        contents: document.getElementById('inp-contents').value
+    };
+    
+    if (!payload.container_no) {
+        alert("Nomor Kontainer tidak boleh kosong!");
+        document.getElementById('inp-container-no').focus();
+        return;
+    }
+    
+    if (!confirm(`Anda akan menyimpan perubahan dan men-submit task ini dengan status "${payload.conclusion}". Lanjutkan?`)) return;
+    
+    btn.innerHTML = `<span class="spinner" style="width:16px; height:16px; margin:0; border-width:2px; border-top-color:#000;"></span> Menyimpan...`;
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch(`http://192.111.111.80:8000/api/tasks/${taskId}/update_and_submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert("Berhasil! Data telah tersimpan di server Nuctech dan task disubmit.");
+            if (window.opener && !window.opener.closed) {
+                window.opener.fetchTasks();
+            }
+            window.close();
+        } else {
+            alert("Error: " + (data.detail || data.error));
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert("Koneksi gagal: " + e.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+// Start
+loadData();

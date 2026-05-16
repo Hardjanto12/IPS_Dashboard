@@ -5,6 +5,7 @@ import re
 import requests
 import datetime
 import urllib3
+import html
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -98,7 +99,9 @@ def fetch_ips_realtime_data(container_picno):
     <SOAP-ENV:Body><Idr:GetIdrRdbXml><wstrImageId>{image_id}</wstrImageId></Idr:GetIdrRdbXml></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
     
     res_xml = send_soap(IDR_API_URL, req_xml)
-    full_xml = extract_xml_value(res_xml, "wstrIdrRdbXml")
+    full_xml_encoded = extract_xml_value(res_xml, "wstrIdrRdbXml")
+    
+    full_xml = html.unescape(full_xml_encoded) if full_xml_encoded else ""
     
     if full_xml:
         # Parse Manifest
@@ -117,9 +120,15 @@ def fetch_ips_realtime_data(container_picno):
         energy_match = extract_xml_value(full_xml, "EnergyMode")
         if energy_match: ips_data["energy_mode"] = energy_match
         
-        # Find all <img> tags
+        # Find all images
         img_matches = re.findall(r'<img>(.*?)</img>', full_xml)
         ips_data["images"] = [img.strip() for img in img_matches if img.strip().endswith('.jpg')]
+        
+        ccr_matches = re.findall(r'<SCANIMG>.*?<TYPE>CCR</TYPE>.*?<PATH>(.*?)</PATH>.*?</SCANIMG>', full_xml, re.IGNORECASE | re.DOTALL)
+        ips_data["ccr_images"] = [f"http://192.111.111.80:6688{path.strip()}" for path in ccr_matches]
+        
+        cam_matches = re.findall(r'<SCANIMG>.*?<TYPE>Camera</TYPE>.*?<PATH>(.*?)</PATH>.*?</SCANIMG>', full_xml, re.IGNORECASE | re.DOTALL)
+        ips_data["camera_images"] = [f"http://192.111.111.80:6688{path.strip()}" for path in cam_matches]
         
     return ips_data, manifest_data
 
@@ -250,6 +259,178 @@ def get_task_details(obj_id: int):
             "container_picno": container_picno
         }
         
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/tasks/{obj_id}/manifest")
+def get_task_manifest(obj_id: int):
+    """Fast endpoint just to get Container No for the table view."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
+        obj = cursor.fetchone()
+        if not obj:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Task not found")
+            
+        container_picno = None
+        if obj["model"].lower() == 'container':
+            container_picno = obj["_id"]
+        else:
+            cursor.execute("""
+                SELECT o._id as container_id FROM Link l 
+                JOIN Object o ON l.objId2 = o.id 
+                WHERE l.objId1 = ? AND l.model2 = 'container'
+            """, (obj_id,))
+            linked = cursor.fetchone()
+            if linked:
+                container_picno = linked["container_id"]
+                
+        conn.close()
+        
+        if not container_picno:
+            return {"container_no": "-"}
+            
+        # We only need manifest data, we can reuse fetch_ips_realtime_data
+        _, manifest_data = fetch_ips_realtime_data(container_picno)
+        return {"container_no": manifest_data.get("container_no", "-")}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+from pydantic import BaseModel
+import json
+
+class InspectionData(BaseModel):
+    container_no: str
+    front_vehicle: str
+    rear_vehicle: str
+    driver: str
+    weight: str
+    country: str
+    remark: str
+    conclusion: str
+    contents: str
+
+@app.post("/api/tasks/{obj_id}/update_and_submit")
+def update_and_submit_task(obj_id: int, data: InspectionData):
+    """Updates the container data via SetSiinfo and then submits it."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
+        obj = cursor.fetchone()
+        if not obj:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Task not found")
+            
+        container_picno = None
+        if obj["model"].lower() == 'container':
+            container_picno = obj["_id"]
+        else:
+            cursor.execute("""
+                SELECT o._id as container_id FROM Link l 
+                JOIN Object o ON l.objId2 = o.id 
+                WHERE l.objId1 = ? AND l.model2 = 'container'
+            """, (obj_id,))
+            linked = cursor.fetchone()
+            if linked:
+                container_picno = linked["container_id"]
+                
+        conn.close()
+        if not container_picno:
+            raise HTTPException(status_code=400, detail="No container PICNO linked to this task.")
+            
+        # 1. Fetch current Siinfo
+        req_unit = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+        <SOAP-ENV:Body><Idr:GetCheckUnitId><wstrCheckUnit>{container_picno}</wstrCheckUnit></Idr:GetCheckUnitId></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        res_unit = send_soap(IDR_API_URL, req_unit)
+        check_unit_id = extract_xml_value(res_unit, "wstrCheckUnitId")
+        if not check_unit_id:
+            raise HTTPException(status_code=400, detail="Container is not active in IDR (maybe already submitted?)")
+
+        req_siinfo = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+        <SOAP-ENV:Body><Idr:GetSiinfo><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId></Idr:GetSiinfo></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        res_siinfo = send_soap(IDR_API_URL, req_siinfo)
+        
+        # Extract <Siinfo> block
+        siinfo_match = re.search(r'<Siinfo>(.*?)</Siinfo>', res_siinfo, re.IGNORECASE | re.DOTALL)
+        if not siinfo_match:
+            raise HTTPException(status_code=500, detail="Failed to fetch Siinfo from IDR")
+            
+        siinfo_content = siinfo_match.group(1)
+        
+        # 2. Modify inputinfo XML inside Siinfo
+        # The inputinfo is HTML encoded inside <m-vTYPEVALUE> where <m-vTYPE> is inputinfo.
+        # But wait! <m-vTYPEVALUE> tags are ordered corresponding to <m-vTYPE>.
+        # We can just decode the whole Siinfo, replace what we need, and re-encode.
+        siinfo_un = html.unescape(siinfo_content)
+        
+        # Replace container_no
+        siinfo_un = re.sub(r'<container_no>.*?</container_no>', f'<container_no>{data.container_no}</container_no>', siinfo_un, count=1)
+        
+        # Replace g_v_no (Front Vehicle)
+        if '<g_v_no>' in siinfo_un:
+            siinfo_un = re.sub(r'<g_v_no>.*?</g_v_no>', f'<g_v_no>{data.front_vehicle}</g_v_no>', siinfo_un, count=1)
+        else:
+            # If not present, try to inject it into <container>
+            siinfo_un = siinfo_un.replace('</container>', f'<g_v_no>{data.front_vehicle}</g_v_no></container>')
+            
+        # You can add more replacements here (rear_vehicle, driver, etc.) if their tags are known.
+        
+        # Re-encode only the XML parts inside m-vTYPEVALUE
+        # Actually, if we just send the whole thing wrapped in <Siinfo>, we MUST re-encode the values inside <m-vTYPEVALUE>
+        # A quick hack: IDR usually accepts it even if we just encode < and > as &lt; and &gt;
+        
+        # Let's extract all m-vTYPEVALUEs and encode their inner content
+        def encode_typevalue(match):
+            inner = match.group(1)
+            # Only encode if it contains actual tags
+            if '<' in inner:
+                return f"<m-vTYPEVALUE>{html.escape(inner)}</m-vTYPEVALUE>"
+            return match.group(0)
+            
+        siinfo_encoded = re.sub(r'<m-vTYPEVALUE>(.*?)</m-vTYPEVALUE>', encode_typevalue, siinfo_un, flags=re.DOTALL)
+        
+        # 3. Send SetSiinfo
+        req_set = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+        <SOAP-ENV:Body><Idr:SetSiinfo><Siinfo>{siinfo_encoded}</Siinfo></Idr:SetSiinfo></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        
+        res_set = send_soap(IDR_API_URL, req_set)
+        
+        # 4. Now perform the conclusion workflow
+        conclusion = data.conclusion if data.conclusion else "No Suspect"
+        
+        # setProperty check_result
+        req_prop1 = f"""<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
+<SOAP-ENV:Body SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+<H986BPM:setProperty><model>container</model><id>{container_picno}</id><name>check_result</name><value>{conclusion}</value></H986BPM:setProperty>
+</SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        send_soap(BPM_API_URL, req_prop1)
+        
+        # CommitConclusion
+        req_commit = f"""<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
+<SOAP-ENV:Body><Idr:CommitConclusion><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId><wstrConclusion>{conclusion}</wstrConclusion><wstrContents>{data.contents}</wstrContents><wstrSuspectContent></wstrSuspectContent><wstrSuspectType></wstrSuspectType><wstrChecker>IPS</wstrChecker></Idr:CommitConclusion></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        send_soap(IDR_API_URL, req_commit)
+        
+        # setState check.end
+        req_state2 = f"""<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
+<SOAP-ENV:Body SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+<H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>end</substate><stateProps><item><name>operator</name><value>BusinessFlow</value></item></stateProps></H986BPM:setState>
+</SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        send_soap(BPM_API_URL, req_state2)
+        
+        return {"status": "success", "message": f"Task updated and submitted as {conclusion}"}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

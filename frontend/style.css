@@ -424,6 +424,26 @@ tr:last-child td {
     gap: 1.5rem;
 }
 
+/* Image Thumbnails */
+.img-thumbnail {
+    width: 140px;
+    height: 90px;
+    border-radius: 8px;
+    background-size: cover;
+    background-position: center;
+    border: 1px solid var(--panel-border);
+    transition: all 0.3s ease;
+    display: inline-block;
+    margin-right: 10px;
+    margin-bottom: 10px;
+}
+
+.img-thumbnail:hover {
+    transform: scale(1.05);
+    border-color: var(--accent);
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+}
+
 /* Detail Sections */
 .detail-section {
     background: rgba(0, 0, 0, 0.2);

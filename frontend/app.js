@@ -59,11 +59,13 @@ async function fetchTasks() {
                 <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
                 <td>${index + 1}</td>
                 <td><span class="uuid-cell">${task.task_id}</span></td>
+                <td id="container-cell-${task.id}"><div class="spinner" style="width: 15px; height: 15px; border-width: 2px;"></div></td>
                 <td style="text-transform: capitalize;">${task.model || '-'}</td>
                 <td><span class="state-badge ${getStateClass(task.state)}">${task.state || 'UNKNOWN'}</span></td>
                 <td style="color: #9ba1a6; font-size: 0.85rem;">${formatTime(task.create_time)}</td>
                 <td>
                     <button class="btn action-btn" onclick="openDetails(${task.id})">Details</button>
+                    <button class="btn action-btn" style="background: rgba(0,240,255,0.1); border-color: rgba(0,240,255,0.3); color: var(--accent); margin-left: 5px;" onclick="window.open('inspection.html?id=${task.id}', '_blank')">Check</button>
                 </td>
             `;
             // Add subtle animation for new rows
@@ -79,10 +81,11 @@ async function fetchTasks() {
             }, 10);
         });
         updateCheckboxListeners();
+        fetchContainerNumbers(tasks);
 
     } catch (error) {
         console.error('Failed to fetch tasks:', error);
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #ff3366;">Koneksi ke backend gagal. Pastikan server backend berjalan di port 8000.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: #ff3366;">Koneksi ke backend gagal. Pastikan server backend berjalan di port 8000.</td></tr>`;
     } finally {
         setTimeout(() => {
             refreshBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.21l-5.6 5.6"/></svg> Refresh Manual`;
@@ -179,6 +182,25 @@ function updateCheckboxListeners() {
             });
             updateMassBtn();
         });
+    }
+}
+
+async function fetchContainerNumbers(tasks) {
+    for (const task of tasks) {
+        try {
+            const cell = document.getElementById(`container-cell-${task.id}`);
+            if (!cell) continue;
+            const res = await fetch(`http://192.111.111.80:8000/api/tasks/${task.id}/manifest`);
+            if (res.ok) {
+                const data = await res.json();
+                cell.textContent = data.container_no || '-';
+            } else {
+                cell.textContent = '-';
+            }
+        } catch (e) {
+            const cell = document.getElementById(`container-cell-${task.id}`);
+            if(cell) cell.textContent = 'Err';
+        }
     }
 }
 
@@ -332,23 +354,8 @@ async function openDetails(objId) {
                         <span class="label">Energy Mode</span>
                         <span class="value">${ips.energy_mode}</span>
                     </div>
-                </div>`;
-                
-            if (ips.images && ips.images.length > 0) {
-                html += `<div style="margin-top: 15px;">
-                    <span class="label" style="display:block; margin-bottom:8px;">X-Ray Images</span>
-                    <div style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px;">`;
-                ips.images.forEach(img => {
-                    html += `<a href="${img}" target="_blank" style="text-decoration: none;">
-                        <div style="width: 100px; height: 60px; background: rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.2);">
-                            <span class="material-symbols-outlined" style="font-size: 24px; color: rgba(255,255,255,0.5);">image</span>
-                        </div>
-                    </a>`;
-                });
-                html += `</div></div>`;
-            }
-            
-            html += `</div>`;
+                </div>
+            </div>`;
         }
         
         // Section 5: State Timeline
