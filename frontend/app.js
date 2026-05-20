@@ -56,6 +56,14 @@ async function fetchTasks() {
             tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #9ba1a6;">Tidak ada task ditemukan di database.</td></tr>`;
             return;
         }
+        
+        // Find oldest task time for date_range (tasks are sorted by DESC create_time, so the last is oldest)
+        const oldestTask = tasks[tasks.length - 1];
+        if (oldestTask && oldestTask.create_time) {
+            const oldestDate = new Date(oldestTask.create_time * 1000);
+            const today = new Date();
+            window.currentDateRange = `${oldestDate.getFullYear()}-${String(oldestDate.getMonth() + 1).padStart(2, '0')}-${String(oldestDate.getDate()).padStart(2, '0')} - ${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        }
 
         // Fetch all container numbers in parallel BEFORE rendering
         const containerMap = {};
@@ -100,6 +108,11 @@ async function fetchTasks() {
         });
         updateCheckboxListeners();
         performSearch();
+        
+        // Re-apply missing doc highlights if toggle is active
+        if (typeof applyDocHighlights === 'function' && isHighlightingDocs) {
+            applyDocHighlights();
+        }
 
     } catch (error) {
         console.error('Failed to fetch tasks:', error);
@@ -236,6 +249,63 @@ function performSearch() {
 if (searchInput) {
     searchInput.addEventListener('input', performSearch);
     searchBtn.addEventListener('click', performSearch);
+}
+
+// ===== HIGHLIGHT NO-DOC FUNCTIONALITY =====
+const highlightToggle = document.getElementById('highlight-no-doc-toggle');
+let missingDocsList = [];
+let isHighlightingDocs = false;
+
+async function applyDocHighlights() {
+    if (!highlightToggle) return;
+    
+    isHighlightingDocs = highlightToggle.checked;
+    const rows = tbody.querySelectorAll('tr');
+    
+    if (!isHighlightingDocs) {
+        // Remove all highlights
+        rows.forEach(row => row.classList.remove('highlight-no-doc'));
+        return;
+    }
+    
+    // Show a small loading state on the label or button if we need to fetch
+    // If list is empty, try to fetch it first
+    if (missingDocsList.length === 0) {
+        try {
+            const labelSpan = highlightToggle.parentElement.nextElementSibling;
+            const originalText = labelSpan.textContent;
+            labelSpan.innerHTML = '<div class="spinner" style="width:10px;height:10px;border-width:2px;display:inline-block;margin:0 5px 0 0;"></div> Memuat...';
+            
+            const url = window.currentDateRange ? `/api/xraydash/no-docs?date_range=${encodeURIComponent(window.currentDateRange)}` : '/api/xraydash/no-docs';
+            const res = await fetch(url);
+            if (res.ok) {
+                const data = await res.json();
+                missingDocsList = data.missing_docs || [];
+            }
+            labelSpan.textContent = originalText;
+        } catch (e) {
+            console.error("Failed to fetch missing docs:", e);
+        }
+    }
+    
+    // Apply highlights based on container number in cell index 3
+    rows.forEach(row => {
+        if (row.cells.length < 8) return; // Skip error/info rows
+        const containerNo = row.cells[3]?.textContent.trim().toUpperCase();
+        
+        // Ensure the list we check against is also uppercase
+        const upperMissingDocs = missingDocsList.map(doc => String(doc).toUpperCase());
+        
+        if (containerNo && upperMissingDocs.includes(containerNo)) {
+            row.classList.add('highlight-no-doc');
+        } else {
+            row.classList.remove('highlight-no-doc');
+        }
+    });
+}
+
+if (highlightToggle) {
+    highlightToggle.addEventListener('change', applyDocHighlights);
 }
 
 document.getElementById('massSubmitBtn')?.addEventListener('click', async () => {

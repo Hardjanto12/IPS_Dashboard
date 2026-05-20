@@ -547,6 +547,37 @@ def submit_task(obj_id: int):
         
     finally:
         conn.close()
+@app.get("/api/xraydash/no-docs")
+def get_xraydash_no_docs(date_range: str = None):
+    try:
+        url = "http://192.111.111.42:3000/api/filtered"
+        payload = {
+            "module": "import",
+            "filterMode": "xcont_only",
+            "pageSize": -1
+        }
+        if date_range:
+            payload["date_range"] = date_range
+        headers = {'Content-Type': 'application/json'}
+        
+        # Use a higher timeout because xraydashretriever filtered scan can take ~40 seconds
+        res = requests.post(url, json=payload, headers=headers, timeout=120)
+        res.raise_for_status()
+        data = res.json()
+        
+        # Extract container numbers missing documents
+        missing_docs = set()
+        for row in data.get("data", []):
+            if row.get("cont_no"):
+                missing_docs.add(row["cont_no"].strip())
+            if row.get("xcont_no"):
+                missing_docs.add(row["xcont_no"].strip())
+                
+        return {"missing_docs": list(missing_docs)}
+        
+    except Exception as e:
+        # If xraydashretriever is offline or error occurs, return empty list gracefully
+        return {"missing_docs": [], "error": str(e)}
 
 # --- Serve Frontend (Dashboard) ---
 if getattr(sys, 'frozen', False):

@@ -42,20 +42,29 @@ async function loadData() {
         const carousel = document.getElementById('carousel-container');
         carousel.innerHTML = '';
         allImages = [];
-        let thumbIndex = 0;
         
+        // 1. Add CCR Images first
+        if (ips.ccr_images) {
+            // Find the 006 image if it exists
+            const rearIndex = ips.ccr_images.findIndex(img => img.toLowerCase().includes('006.jpg') || img.includes('006.'));
+            if (rearIndex > -1) {
+                const rearImg = ips.ccr_images.splice(rearIndex, 1)[0];
+                ips.ccr_images.unshift(rearImg);
+            }
+            
+            ips.ccr_images.forEach(img => {
+                allImages.push({url: img, type: 'CCR', badgeColor: '#DBEAFE'});
+            });
+        }
+        
+        // 2. Add X-Ray Images
         if (ips.images) {
             ips.images.forEach(img => {
                 allImages.push({url: img, type: 'X-Ray', badgeColor: '#E2E8F0'});
             });
         }
         
-        if (ips.ccr_images) {
-            ips.ccr_images.forEach(img => {
-                allImages.push({url: img, type: 'CCR', badgeColor: '#DBEAFE'});
-            });
-        }
-        
+        // 3. Add Camera Images
         if (ips.camera_images) {
             ips.camera_images.forEach(img => {
                 allImages.push({url: img, type: 'Camera', badgeColor: '#FEF3C7'});

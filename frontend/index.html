@@ -43,9 +43,9 @@
                         </select>
                         <select id="limit-filter" class="custom-select">
                             <option value="50">50 Data</option>
-                            <option value="100" selected>100 Data</option>
+                            <option value="100">100 Data</option>
                             <option value="500">500 Data</option>
-                            <option value="0">Semua Data</option>
+                            <option value="0" selected>Semua Data</option>
                         </select>
                         <button id="refresh-btn" class="btn primary-btn">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -60,6 +60,13 @@
                 <div class="search-box">
                     <input type="text" id="searchInput" placeholder="Search Task ID...">
                     <button class="btn btn-outline" id="searchBtn">Search</button>
+                    <div class="toggle-container" style="display: flex; align-items: center; gap: 0.5rem; margin-left: 1rem;">
+                        <label class="switch">
+                            <input type="checkbox" id="highlight-no-doc-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600;">Highlight Task Tanpa Dokumen</span>
+                    </div>
                 </div>
 
                 <button class="btn primary-btn" id="massSubmitBtn" style="margin-left: 15px; display: none;">

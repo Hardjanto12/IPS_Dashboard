@@ -419,3 +419,11 @@ tr:last-child td { border-bottom: none; }
     margin: 0 auto 1rem;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Highlight for tasks missing documents */
+tr.highlight-no-doc td {
+    background-color: rgba(255, 51, 102, 0.15) !important;
+}
+tr.highlight-no-doc:hover td {
+    background-color: rgba(255, 51, 102, 0.25) !important;
+}
