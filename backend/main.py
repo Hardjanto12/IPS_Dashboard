@@ -548,11 +548,13 @@ def submit_task(obj_id: int):
     finally:
         conn.close()
 @app.get("/api/xraydash/no-docs")
-def get_xraydash_no_docs(date_range: str = None):
+def get_xraydash_no_docs(date_range: str = None, module: str = "import"):
     try:
         url = "http://192.111.111.42:3000/api/filtered"
+        action = "get_export" if module == "export" else "get_import"
         payload = {
-            "module": "import",
+            "module": module,
+            "action": action,
             "filterMode": "xcont_only",
             "pageSize": -1
         }
@@ -573,7 +575,7 @@ def get_xraydash_no_docs(date_range: str = None):
             if row.get("xcont_no"):
                 missing_docs.add(row["xcont_no"].strip())
                 
-        return {"missing_docs": list(missing_docs)}
+        return {"missing_docs": list(missing_docs), "module": module}
         
     except Exception as e:
         # If xraydashretriever is offline or error occurs, return empty list gracefully

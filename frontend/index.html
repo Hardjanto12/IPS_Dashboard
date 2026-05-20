@@ -65,7 +65,11 @@
                             <input type="checkbox" id="highlight-no-doc-toggle">
                             <span class="slider round"></span>
                         </label>
-                        <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600;">Highlight Task Tanpa Dokumen</span>
+                        <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600;">Highlight Tanpa Dokumen</span>
+                        <select id="highlight-module-select" class="custom-select" style="padding: 0.3rem 0.6rem; font-size: 0.8rem; border-radius: 8px; min-width: auto;">
+                            <option value="import">Import</option>
+                            <option value="export">Export</option>
+                        </select>
                         <span id="missing-doc-count" style="font-size: 0.85rem; color: #ff3366; font-weight: 700; background: rgba(255,51,102,0.1); padding: 2px 8px; border-radius: 10px; display: none;"></span>
                     </div>
                 </div>
@@ -117,7 +121,7 @@
         </div>
     </div>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
 </body>
 
 </html>

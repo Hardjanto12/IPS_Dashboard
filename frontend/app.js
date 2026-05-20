@@ -257,7 +257,9 @@ if (searchInput) {
 
 // ===== HIGHLIGHT NO-DOC FUNCTIONALITY =====
 const highlightToggle = document.getElementById('highlight-no-doc-toggle');
+const moduleSelect = document.getElementById('highlight-module-select');
 let missingDocsList = [];
+let missingDocsModule = ''; // track which module the cached list belongs to
 let isHighlightingDocs = false;
 
 async function applyDocHighlights() {
@@ -265,6 +267,7 @@ async function applyDocHighlights() {
     
     isHighlightingDocs = highlightToggle.checked;
     const rows = tbody.querySelectorAll('tr');
+    const selectedModule = moduleSelect ? moduleSelect.value : 'import';
     
     const countSpan = document.getElementById('missing-doc-count');
     
@@ -275,20 +278,23 @@ async function applyDocHighlights() {
         return;
     }
     
-    // Show a small loading state on the label or button if we need to fetch
-    // If list is empty, try to fetch it first
-    if (missingDocsList.length === 0) {
+    // Re-fetch if list is empty or module changed
+    if (missingDocsList.length === 0 || missingDocsModule !== selectedModule) {
         try {
             const labelSpan = highlightToggle.parentElement.nextElementSibling;
             const originalText = labelSpan.textContent;
             labelSpan.innerHTML = '<div class="spinner" style="width:10px;height:10px;border-width:2px;display:inline-block;margin:0 5px 0 0;"></div> Memuat...';
             if (countSpan) countSpan.style.display = 'none';
             
-            const url = window.currentDateRange ? `/api/xraydash/no-docs?date_range=${encodeURIComponent(window.currentDateRange)}` : '/api/xraydash/no-docs';
+            let url = `/api/xraydash/no-docs?module=${selectedModule}`;
+            if (window.currentDateRange) {
+                url += `&date_range=${encodeURIComponent(window.currentDateRange)}`;
+            }
             const res = await fetch(url);
             if (res.ok) {
                 const data = await res.json();
                 missingDocsList = data.missing_docs || [];
+                missingDocsModule = selectedModule;
             }
             labelSpan.textContent = originalText;
         } catch (e) {
@@ -297,13 +303,11 @@ async function applyDocHighlights() {
     }
     
     let highlightCount = 0;
+    const upperMissingDocs = missingDocsList.map(doc => String(doc).toUpperCase());
     // Apply highlights based on container number in cell index 3
     rows.forEach(row => {
         if (row.cells.length < 8) return; // Skip error/info rows
         const containerNo = row.cells[3]?.textContent.trim().toUpperCase();
-        
-        // Ensure the list we check against is also uppercase
-        const upperMissingDocs = missingDocsList.map(doc => String(doc).toUpperCase());
         
         if (containerNo && upperMissingDocs.includes(containerNo)) {
             row.classList.add('highlight-no-doc');
@@ -321,6 +325,17 @@ async function applyDocHighlights() {
 
 if (highlightToggle) {
     highlightToggle.addEventListener('change', applyDocHighlights);
+}
+
+// When module changes, reset cached data and re-apply if toggle is active
+if (moduleSelect) {
+    moduleSelect.addEventListener('change', () => {
+        missingDocsList = [];
+        missingDocsModule = '';
+        if (isHighlightingDocs) {
+            applyDocHighlights();
+        }
+    });
 }
 
 document.getElementById('massSubmitBtn')?.addEventListener('click', async () => {
