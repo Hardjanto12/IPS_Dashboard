@@ -25,12 +25,18 @@ async function loadData() {
         document.getElementById('task-id-badge').textContent = task.task_id;
         
         // Populate Form
-        document.getElementById('inp-container-no').value = manifest.container_no || '';
-        document.getElementById('inp-front-vehicle').value = manifest.vehicle_serial || '';
-        document.getElementById('inp-weight').value = manifest.container_weight || '';
+        document.getElementById('inp-container-no').value = manifest.container_no || '-';
+        document.getElementById('inp-front-vehicle').value = manifest.vehicle_serial || '-';
+        document.getElementById('inp-rear-vehicle').value = manifest.rear_vehicle_no || '-';
+        document.getElementById('inp-driver').value = manifest.driver_name || '-';
+        document.getElementById('inp-country').value = manifest.country_of_origin || '-';
         
-        document.getElementById('inp-enter-time').value = formatTime(task.create_time);
-        document.getElementById('inp-scan-time').value = ips.scan_time ? ips.scan_time.replace(/\.\d+/, '') : '';
+        document.getElementById('inp-enter-time').value = ips.vehicle_enter_time || formatTime(task.create_time);
+        document.getElementById('inp-scan-time').value = ips.scan_time ? ips.scan_time.replace(/\.\d+/, '') : '-';
+        document.getElementById('inp-exit-time').value = manifest.exit_time || '-';
+        
+        document.getElementById('inp-weight').value = manifest.container_weight || '-';
+        document.getElementById('inp-remark').value = manifest.remark || '-';
         
         // Populate Gallery
         const carousel = document.getElementById('carousel-container');

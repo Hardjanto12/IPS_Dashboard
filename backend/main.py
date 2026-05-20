@@ -68,7 +68,9 @@ def fetch_ips_realtime_data(container_picno):
     }
     manifest_data = {
         "container_no": "-", "container_type": "-", "container_weight": "-",
-        "vehicle_type": "-", "vehicle_serial": "-"
+        "vehicle_type": "-", "vehicle_serial": "-",
+        "driver_name": "-", "country_of_origin": "-", "exit_time": "-", 
+        "remark": "-", "rear_vehicle_no": "-"
     }
     
     if not container_picno:
@@ -107,13 +109,47 @@ def fetch_ips_realtime_data(container_picno):
     full_xml = html.unescape(full_xml_encoded) if full_xml_encoded else ""
     
     if full_xml:
-        # Parse Manifest
+        # === Parse Manifest from <inputinfo> block ===
+        # Nuctech uses non-standard XML tags for manifest data:
+        #   <container_no>       -> Container Number
+        #   <tax_number>         -> Front Vehicle NO (plate)
+        #   <fyco_present>       -> Rear Vehicle NO (plate)
+        #   <number_of_colli>    -> Loadometer Weight
+        #   <name_official>      -> Driver's Name
+        #   <appointment_date>   -> Vehicle Exit Time (approx)
+        
         c_no = extract_xml_value(full_xml, "container_no")
         if c_no: manifest_data["container_no"] = c_no
-        v_serial = extract_xml_value(full_xml, "g_v_no")
-        if v_serial: manifest_data["vehicle_serial"] = v_serial
         
-        # Parse Image Info
+        # Front Vehicle = <tax_number>, fallback to <g_v_no>
+        front_v = extract_xml_value(full_xml, "tax_number") or extract_xml_value(full_xml, "g_v_no")
+        if front_v: manifest_data["vehicle_serial"] = front_v
+        
+        # Rear Vehicle = <fyco_present>
+        rear_v = extract_xml_value(full_xml, "fyco_present")
+        if rear_v: manifest_data["rear_vehicle_no"] = rear_v
+        
+        # Loadometer Weight = <number_of_colli>
+        weight = extract_xml_value(full_xml, "number_of_colli")
+        if weight: manifest_data["container_weight"] = weight
+        
+        # Driver's Name = <name_official>
+        driver = extract_xml_value(full_xml, "name_official")
+        if driver: manifest_data["driver_name"] = driver
+        
+        # Country of Origin = <office> (customs office code)
+        country = extract_xml_value(full_xml, "office")
+        if country: manifest_data["country_of_origin"] = country
+        
+        # Vehicle Exit Time = <appointment_date> in <planning>
+        exit_time = extract_xml_value(full_xml, "appointment_date")
+        if exit_time: manifest_data["exit_time"] = exit_time
+        
+        # Remark / Goods Description
+        remark = extract_xml_value(full_xml, "consignee") or extract_xml_value(full_xml, "name_vessel")
+        if remark: manifest_data["remark"] = remark
+        
+        # === Parse Image & Scan Info ===
         scan_time = extract_xml_value(full_xml, "SCANTIME")
         if scan_time: ips_data["scan_time"] = scan_time
         
@@ -122,6 +158,13 @@ def fetch_ips_realtime_data(container_picno):
         
         energy_match = extract_xml_value(full_xml, "EnergyMode")
         if energy_match: ips_data["energy_mode"] = energy_match
+        
+        # Vehicle Enter Time (unix timestamp in XML)
+        veh_enter = extract_xml_value(full_xml, "Time_Veh_Enter")
+        if veh_enter:
+            try:
+                ips_data["vehicle_enter_time"] = datetime.datetime.fromtimestamp(int(veh_enter)).strftime("%Y-%m-%d %H:%M:%S")
+            except: pass
         
         # Find all images
         img_matches = re.findall(r'<img>(.*?)</img>', full_xml)

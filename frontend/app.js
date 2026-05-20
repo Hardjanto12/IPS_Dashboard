@@ -33,6 +33,12 @@ async function fetchTasks() {
     try {
         refreshBtn.innerHTML = '<div class="spinner" style="width: 14px; height: 14px; border-width: 2px; margin:0;"></div> Refreshing...';
         
+        // Show loading state in table
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 3rem;">
+            <div class="spinner" style="width: 32px; height: 32px; border-width: 3px; margin: 0 auto 1rem;"></div>
+            <div style="color: var(--text-muted); font-size: 0.9rem;">Memuat data dari server...</div>
+        </td></tr>`;
+        
         const limitValue = limitFilter.value;
         const statusValue = statusFilter.value;
         const fetchUrl = `${API_URL}?limit=${limitValue}&status=${statusValue}`;
@@ -51,15 +57,35 @@ async function fetchTasks() {
             return;
         }
 
+        // Fetch all container numbers in parallel BEFORE rendering
+        const containerMap = {};
+        const manifestPromises = tasks.map(async (task) => {
+            try {
+                const res = await fetch(`http://192.111.111.80:8000/api/tasks/${task.id}/manifest`);
+                if (res.ok) {
+                    const mData = await res.json();
+                    containerMap[task.id] = mData.container_no || '-';
+                } else {
+                    containerMap[task.id] = '-';
+                }
+            } catch (e) {
+                containerMap[task.id] = '-';
+            }
+        });
+        
+        await Promise.all(manifestPromises);
+
+        // Render all rows at once
         tbody.innerHTML = '';
         tasks.forEach((task, index) => {
             const tr = document.createElement('tr');
             const result = task.properties?.result;
+            const containerNo = containerMap[task.id] || '-';
             tr.innerHTML = `
                 <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
                 <td>${index + 1}</td>
                 <td><span class="uuid-cell">${task.task_id}</span></td>
-                <td id="container-cell-${task.id}"><div class="spinner" style="width: 15px; height: 15px; border-width: 2px;"></div></td>
+                <td id="container-cell-${task.id}">${containerNo}</td>
                 <td style="text-transform: capitalize;">${task.model || '-'}</td>
                 <td><span class="state-badge ${getStateClass(task.state)}">${task.state || 'UNKNOWN'}</span></td>
                 <td style="color: #9ba1a6; font-size: 0.85rem;">${formatTime(task.create_time)}</td>
@@ -70,21 +96,10 @@ async function fetchTasks() {
                     </div>
                 </td>
             `;
-            // Add subtle animation for new rows
-            tr.style.opacity = '0';
-            tr.style.transform = 'translateY(10px)';
-            tr.style.transition = `all 0.3s ease ${index * 0.05}s`;
             tbody.appendChild(tr);
-            
-            // Trigger reflow
-            setTimeout(() => {
-                tr.style.opacity = '1';
-                tr.style.transform = 'translateY(0)';
-            }, 10);
         });
         updateCheckboxListeners();
         performSearch();
-        fetchContainerNumbers(tasks);
 
     } catch (error) {
         console.error('Failed to fetch tasks:', error);
@@ -130,8 +145,7 @@ function closeModal() {
     modal.style.display = 'none';
 }
 
-// Close modal on overlay click
-modal.addEventListener('click', (e) => {
+modal?.addEventListener('click', (e) => {
     if (e.target === modal) closeModal();
 });
 
@@ -172,12 +186,11 @@ async function manualSubmitTask(taskId) {
 function updateCheckboxListeners() {
     const checkboxes = document.querySelectorAll('.task-checkbox');
     const massBtn = document.getElementById('massSubmitBtn');
-    if (!massBtn) return;
     
     function updateMassBtn() {
         const checked = document.querySelectorAll('.task-checkbox:checked').length;
         if (checked > 0) {
-            massBtn.style.display = 'inline-block';
+            massBtn.style.display = 'inline-flex';
             massBtn.textContent = `✅ Auto-Submit Selected (${checked})`;
         } else {
             massBtn.style.display = 'none';
@@ -223,27 +236,6 @@ function performSearch() {
 if (searchInput) {
     searchInput.addEventListener('input', performSearch);
     searchBtn.addEventListener('click', performSearch);
-}
-
-async function fetchContainerNumbers(tasks) {
-    for (const task of tasks) {
-        try {
-            const cell = document.getElementById(`container-cell-${task.id}`);
-            if (!cell) continue;
-            const res = await fetch(`http://192.111.111.80:8000/api/tasks/${task.id}/manifest`);
-            if (res.ok) {
-                const data = await res.json();
-                cell.textContent = data.container_no || '-';
-            } else {
-                cell.textContent = '-';
-            }
-        } catch (e) {
-            const cell = document.getElementById(`container-cell-${task.id}`);
-            if(cell) cell.textContent = 'Err';
-        }
-    }
-    // Re-apply search filter after container numbers are loaded
-    performSearch();
 }
 
 document.getElementById('massSubmitBtn')?.addEventListener('click', async () => {
