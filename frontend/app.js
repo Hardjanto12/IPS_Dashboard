@@ -65,17 +65,16 @@ async function fetchTasks() {
             window.currentDateRange = `${oldestDate.getFullYear()}-${String(oldestDate.getMonth() + 1).padStart(2, '0')}-${String(oldestDate.getDate()).padStart(2, '0')} - ${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         }
 
-        // Render all rows at once (container_no is now included in /api/tasks response)
+        // Render all rows IMMEDIATELY with '-' for container numbers
         tbody.innerHTML = '';
         tasks.forEach((task, index) => {
             const tr = document.createElement('tr');
             const result = task.properties?.result;
-            const containerNo = task.container_no || '-';
             tr.innerHTML = `
                 <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
                 <td>${index + 1}</td>
                 <td><span class="uuid-cell">${task.task_id}</span></td>
-                <td id="container-cell-${task.id}">${containerNo}</td>
+                <td id="container-cell-${task.id}" style="color: var(--text-muted);">...</td>
                 <td style="text-transform: capitalize;">${task.model || '-'}</td>
                 <td><span class="state-badge ${getStateClass(task.state)}">${task.state || 'UNKNOWN'}</span></td>
                 <td style="color: #9ba1a6; font-size: 0.85rem;">${formatTime(task.create_time)}</td>
@@ -91,7 +90,30 @@ async function fetchTasks() {
         updateCheckboxListeners();
         performSearch();
         
-        // Re-apply missing doc highlights if toggle is active
+        // Fetch container numbers in the background and update cells as they arrive
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+            const batch = tasks.slice(i, i + BATCH_SIZE);
+            const batchPromises = batch.map(async (task) => {
+                try {
+                    const res = await fetch(`http://192.111.111.80:8000/api/tasks/${task.id}/manifest`);
+                    if (res.ok) {
+                        const mData = await res.json();
+                        const cell = document.getElementById(`container-cell-${task.id}`);
+                        if (cell) {
+                            cell.textContent = mData.container_no || '-';
+                            cell.style.color = '';
+                        }
+                    }
+                } catch (e) {
+                    const cell = document.getElementById(`container-cell-${task.id}`);
+                    if (cell) { cell.textContent = '-'; cell.style.color = ''; }
+                }
+            });
+            await Promise.all(batchPromises);
+        }
+        
+        // Re-apply missing doc highlights after all containers are loaded
         if (typeof applyDocHighlights === 'function' && isHighlightingDocs) {
             applyDocHighlights();
         }

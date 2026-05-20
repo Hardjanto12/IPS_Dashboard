@@ -191,15 +191,9 @@ def get_tasks(limit: int = 100, status: str = "all"):
             o._id as task_id, 
             o.model, 
             o.createTime, 
-            s.state,
-            CASE 
-                WHEN o.model = 'container' THEN o._id
-                ELSE c._id
-            END as container_no
+            s.state 
         FROM Object o 
         LEFT JOIN State s ON o.id = s.objId 
-        LEFT JOIN Link l ON l.objId1 = o.id AND l.model2 = 'container'
-        LEFT JOIN Object c ON l.objId2 = c.id
         WHERE s.seq = (SELECT MAX(seq) FROM State WHERE objId = o.id)
         """
         
@@ -223,8 +217,7 @@ def get_tasks(limit: int = 100, status: str = "all"):
                 "task_id": row["task_id"],
                 "model": row["model"],
                 "create_time": row["createTime"],
-                "state": row["state"],
-                "container_no": row["container_no"] or "-"
+                "state": row["state"]
             })
             
         conn.close()
