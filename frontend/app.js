@@ -65,30 +65,12 @@ async function fetchTasks() {
             window.currentDateRange = `${oldestDate.getFullYear()}-${String(oldestDate.getMonth() + 1).padStart(2, '0')}-${String(oldestDate.getDate()).padStart(2, '0')} - ${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         }
 
-        // Fetch all container numbers in parallel BEFORE rendering
-        const containerMap = {};
-        const manifestPromises = tasks.map(async (task) => {
-            try {
-                const res = await fetch(`http://192.111.111.80:8000/api/tasks/${task.id}/manifest`);
-                if (res.ok) {
-                    const mData = await res.json();
-                    containerMap[task.id] = mData.container_no || '-';
-                } else {
-                    containerMap[task.id] = '-';
-                }
-            } catch (e) {
-                containerMap[task.id] = '-';
-            }
-        });
-        
-        await Promise.all(manifestPromises);
-
-        // Render all rows at once
+        // Render all rows at once (container_no is now included in /api/tasks response)
         tbody.innerHTML = '';
         tasks.forEach((task, index) => {
             const tr = document.createElement('tr');
             const result = task.properties?.result;
-            const containerNo = containerMap[task.id] || '-';
+            const containerNo = task.container_no || '-';
             tr.innerHTML = `
                 <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
                 <td>${index + 1}</td>
@@ -262,9 +244,12 @@ async function applyDocHighlights() {
     isHighlightingDocs = highlightToggle.checked;
     const rows = tbody.querySelectorAll('tr');
     
+    const countSpan = document.getElementById('missing-doc-count');
+    
     if (!isHighlightingDocs) {
         // Remove all highlights
         rows.forEach(row => row.classList.remove('highlight-no-doc'));
+        if (countSpan) countSpan.style.display = 'none';
         return;
     }
     
@@ -275,6 +260,7 @@ async function applyDocHighlights() {
             const labelSpan = highlightToggle.parentElement.nextElementSibling;
             const originalText = labelSpan.textContent;
             labelSpan.innerHTML = '<div class="spinner" style="width:10px;height:10px;border-width:2px;display:inline-block;margin:0 5px 0 0;"></div> Memuat...';
+            if (countSpan) countSpan.style.display = 'none';
             
             const url = window.currentDateRange ? `/api/xraydash/no-docs?date_range=${encodeURIComponent(window.currentDateRange)}` : '/api/xraydash/no-docs';
             const res = await fetch(url);
@@ -288,6 +274,7 @@ async function applyDocHighlights() {
         }
     }
     
+    let highlightCount = 0;
     // Apply highlights based on container number in cell index 3
     rows.forEach(row => {
         if (row.cells.length < 8) return; // Skip error/info rows
@@ -298,10 +285,16 @@ async function applyDocHighlights() {
         
         if (containerNo && upperMissingDocs.includes(containerNo)) {
             row.classList.add('highlight-no-doc');
+            highlightCount++;
         } else {
             row.classList.remove('highlight-no-doc');
         }
     });
+    
+    if (countSpan) {
+        countSpan.textContent = `${highlightCount} Task`;
+        countSpan.style.display = 'inline-block';
+    }
 }
 
 if (highlightToggle) {
