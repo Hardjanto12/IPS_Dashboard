@@ -461,17 +461,19 @@ def update_and_submit_task(obj_id: int, data: InspectionData):
 </SOAP-ENV:Body></SOAP-ENV:Envelope>"""
         send_soap(BPM_API_URL, req_prop1)
         
-        # CommitConclusion
+        # CommitConclusion (using conclusioninfo format to fill Inspector/Conclusion fields)
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        contents_escaped = html.escape(data.contents) if data.contents else ""
         req_commit = f"""<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
-<SOAP-ENV:Body><Idr:CommitConclusion><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId><wstrConclusion>{conclusion}</wstrConclusion><wstrContents>{data.contents}</wstrContents><wstrSuspectContent></wstrSuspectContent><wstrSuspectType></wstrSuspectType><wstrChecker>IPS</wstrChecker></Idr:CommitConclusion></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+<SOAP-ENV:Body><Idr:CommitConclusion><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId><conclusioninfo><m-strID></m-strID><m-strCHECKUNITID>{container_picno}</m-strCHECKUNITID><m-strOPERATORID>Ips1</m-strOPERATORID><m-strAPPID>check</m-strAPPID><m-strTYPE>{conclusion}</m-strTYPE><m-strCONTENT>&lt;CONTENT&gt;{contents_escaped}&lt;/CONTENT&gt;</m-strCONTENT><m-strOPERATIONTIME>{now_str}</m-strOPERATIONTIME></conclusioninfo></Idr:CommitConclusion></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
         send_soap(IDR_API_URL, req_commit)
         
         # setState check.end
         req_state2 = f"""<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
 <SOAP-ENV:Body SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-<H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>end</substate><stateProps><item><name>operator</name><value>BusinessFlow</value></item></stateProps></H986BPM:setState>
+<H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>end</substate><stateProps><item><name>operator</name><value>Ips1</value></item></stateProps></H986BPM:setState>
 </SOAP-ENV:Body></SOAP-ENV:Envelope>"""
         send_soap(BPM_API_URL, req_state2)
         
@@ -521,7 +523,7 @@ def submit_task(obj_id: int):
         # 1. setState check.begin (BPM)
         req_begin = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
-        <SOAP-ENV:Body><H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>begin</substate><stateProps><item><name>operator</name><value>AutoSubmit</value></item></stateProps></H986BPM:setState></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        <SOAP-ENV:Body><H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>begin</substate><stateProps><item><name>operator</name><value>Ips1</value></item></stateProps></H986BPM:setState></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
         send_soap(BPM_API_URL, req_begin)
         
         # 2. setProperty check_result = No Suspect (BPM)
@@ -534,13 +536,13 @@ def submit_task(obj_id: int):
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         req_commit = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
-        <SOAP-ENV:Body><Idr:CommitConclusion><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId><conclusioninfo><m-strID></m-strID><m-strCHECKUNITID>{container_picno}</m-strCHECKUNITID><m-strOPERATORID>AutoSubmit</m-strOPERATORID><m-strAPPID>check</m-strAPPID><m-strTYPE>No Suspect</m-strTYPE><m-strCONTENT>&lt;CONTENT&gt;&lt;CONTENT&gt;&lt;/CONTENT&gt;&lt;/CONTENT&gt;</m-strCONTENT><m-strOPERATIONTIME>{now_str}</m-strOPERATIONTIME></conclusioninfo></Idr:CommitConclusion></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        <SOAP-ENV:Body><Idr:CommitConclusion><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId><conclusioninfo><m-strID></m-strID><m-strCHECKUNITID>{container_picno}</m-strCHECKUNITID><m-strOPERATORID>Ips1</m-strOPERATORID><m-strAPPID>check</m-strAPPID><m-strTYPE>No Suspect</m-strTYPE><m-strCONTENT>&lt;CONTENT&gt;&lt;CONTENT&gt;&lt;/CONTENT&gt;&lt;/CONTENT&gt;</m-strCONTENT><m-strOPERATIONTIME>{now_str}</m-strOPERATIONTIME></conclusioninfo></Idr:CommitConclusion></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
         send_soap(IDR_API_URL, req_commit)
         
         # 4. setState check.end (BPM)
         req_end = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
-        <SOAP-ENV:Body><H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>end</substate><stateProps><item><name>operator</name><value>AutoSubmit</value></item></stateProps></H986BPM:setState></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
+        <SOAP-ENV:Body><H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>end</substate><stateProps><item><name>operator</name><value>Ips1</value></item></stateProps></H986BPM:setState></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
         send_soap(BPM_API_URL, req_end)
         
         return {"status": "success", "message": f"Successfully submitted {container_picno} as No Suspect."}

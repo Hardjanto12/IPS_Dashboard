@@ -262,6 +262,12 @@ let missingDocsList = [];
 let missingDocsModule = ''; // track which module the cached list belongs to
 let isHighlightingDocs = false;
 
+// Restore last selected module from localStorage
+if (moduleSelect) {
+    const savedModule = localStorage.getItem('highlight-module');
+    if (savedModule) moduleSelect.value = savedModule;
+}
+
 async function applyDocHighlights() {
     if (!highlightToggle) return;
     
@@ -327,9 +333,10 @@ if (highlightToggle) {
     highlightToggle.addEventListener('change', applyDocHighlights);
 }
 
-// When module changes, reset cached data and re-apply if toggle is active
+// When module changes, save to localStorage, reset cached data and re-apply if toggle is active
 if (moduleSelect) {
     moduleSelect.addEventListener('change', () => {
+        localStorage.setItem('highlight-module', moduleSelect.value);
         missingDocsList = [];
         missingDocsModule = '';
         if (isHighlightingDocs) {
