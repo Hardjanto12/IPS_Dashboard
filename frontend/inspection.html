@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inspection Page - Nuctech Dashboard</title>
+    <link href="assets/plus_jakarta_sans.css" rel="stylesheet">
+    <link href="assets/material_symbols.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="assets/sweetalert2.min.js"></script>
+    <style>
+        .inspection-container {
+            display: grid;
+            grid-template-columns: 45% 55%;
+            gap: 1.5rem;
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 1.5rem;
+            height: calc(100vh - 80px);
+        }
+        
+        /* Left Column (Forms) */
+        .left-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+
+        .left-panel::-webkit-scrollbar { width: 6px; }
+        .left-panel::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        .left-panel::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 4px; }
+
+        .section-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+            border-radius: 12px;
+            padding: 1.5rem;
+            position: relative;
+        }
+        
+        .section-title {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.8rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+        
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .form-group label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .form-group input, .form-group textarea {
+            background: #F8FAFC;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.95rem;
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: #FFFFFF;
+            box-shadow: 0 0 0 3px var(--accent-light);
+        }
+        
+        .form-group input:read-only {
+            background: #F1F5F9;
+            color: var(--text-muted);
+            cursor: default;
+        }
+        
+        #inp-container-no {
+            font-family: monospace;
+            font-weight: bold;
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            background: var(--accent-light);
+            border-color: var(--accent);
+        }
+        
+        /* Conclusion Box */
+        .conclusion-box {
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+            margin-top: 0.5rem;
+        }
+        
+        .radio-group {
+            display: flex;
+            gap: 2rem;
+            background: #F8FAFC;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--panel-border);
+        }
+        
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        
+        .radio-label input[type="radio"] {
+            accent-color: var(--accent);
+            width: 16px;
+            height: 16px;
+        }
+        
+        /* Right Column (Image Viewer & Carousel) */
+        .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            height: 100%;
+        }
+
+        .main-image-viewer {
+            flex: 1;
+            min-height: 0;
+            background: #F1F5F9;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .main-image-viewer img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .main-badge {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(255,255,255,0.9);
+            color: #000;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            backdrop-filter: blur(4px);
+            border: 1px solid var(--border-color);
+        }
+
+        .carousel-container {
+            height: 120px;
+            background: #FFFFFF;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            flex-shrink: 0;
+        }
+
+        .carousel-container::-webkit-scrollbar { height: 6px; }
+        .carousel-container::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
+        .carousel-container::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 4px; }
+
+        .thumbnail {
+            position: relative;
+            flex: 0 0 140px;
+            height: 100%;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 2px solid transparent;
+            background-color: #F1F5F9;
+            background-size: cover;
+            background-position: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            opacity: 0.6;
+        }
+
+        .thumbnail.active {
+            border-color: var(--accent);
+            opacity: 1;
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+        }
+
+        .thumbnail:hover {
+            opacity: 1;
+        }
+
+        .thumb-badge {
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+            background: rgba(255,255,255,0.9);
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: bold;
+        }
+        
+        .top-bar {
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.8rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        
+        .top-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <span class="material-symbols-outlined" style="color: var(--accent);">fact_check</span>
+            <h2 style="font-size: 1.2rem; font-weight: 500;">Check Container Data</h2>
+            <div style="background: var(--accent-light); color: var(--accent); padding: 2px 10px; border-radius: 4px; font-family: monospace; font-size: 0.9rem; font-weight: 700;" id="task-id-badge">Loading...</div>
+        </div>
+        <div style="display: flex; gap: 1rem;">
+            <button class="btn action-btn" onclick="window.close()">
+                <span class="material-symbols-outlined" style="font-size: 18px;">close</span> Exit
+            </button>
+            <button class="btn primary-btn" id="btn-save-submit" onclick="submitInspection()">
+                <span class="material-symbols-outlined" style="font-size: 18px;">save</span> Save & Submit
+            </button>
+        </div>
+    </div>
+
+    <div class="inspection-container">
+        <!-- Left Column: Forms -->
+        <div class="left-panel">
+            <div class="section-box">
+                <div class="section-title">Manifest Information</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Front Vehicle NO.:</label>
+                        <input type="text" id="inp-front-vehicle">
+                    </div>
+                    <div class="form-group">
+                        <label>Container NO.:</label>
+                        <input type="text" id="inp-container-no" placeholder="AXEU6032820">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Rear Vehicle NO.:</label>
+                        <input type="text" id="inp-rear-vehicle">
+                    </div>
+                    <div class="form-group">
+                        <label>Country of Origin:</label>
+                        <input type="text" id="inp-country">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Driver's Name:</label>
+                        <input type="text" id="inp-driver">
+                    </div>
+                    <div class="form-group">
+                        <label>Scan Time:</label>
+                        <input type="text" id="inp-scan-time" readonly>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Vehicle Enter Time:</label>
+                        <input type="text" id="inp-enter-time" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>Vehicle Exit Time:</label>
+                        <input type="text" id="inp-exit-time" readonly>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Loadometer Weight:</label>
+                        <input type="text" id="inp-weight">
+                    </div>
+                    <div></div>
+
+                    <div class="form-group full-width">
+                        <label>Remark:</label>
+                        <textarea id="inp-remark" rows="2"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-box">
+                <div class="section-title">Check Conclusion</div>
+                <div class="conclusion-box">
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="conclusion" value="No Suspect" checked> Pass (No Suspect)
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="conclusion" value="Manual Control"> Manual Control
+                        </label>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label>Contents (Notes):</label>
+                        <textarea id="inp-contents" rows="4"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Image Carousel -->
+        <div class="right-panel">
+            <div class="main-image-viewer">
+                <span class="main-badge" id="main-img-badge">No Image</span>
+                <img id="main-image-display" src="" style="display: none;">
+                <div id="main-image-loading" class="spinner" style="display: none;"></div>
+            </div>
+            
+            <div class="carousel-container" id="carousel-container">
+                <div style="width: 100%; text-align: center; line-height: 100px; color: var(--text-secondary);">
+                    Memuat Galeri...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="inspection.js?v=3"></script>
+</body>
+</html>
