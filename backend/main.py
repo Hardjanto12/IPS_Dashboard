@@ -42,10 +42,63 @@ def get_db_connection():
     return conn
 
 # --- SOAP Helpers ---
+# --- SOAP Session & Caching Helpers ---
+soap_session = requests.Session()
+
+def get_cache_db_path():
+    if getattr(sys, 'frozen', False):
+        app_path = os.path.dirname(sys.executable)
+    else:
+        app_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(app_path, "dashboard_cache.db")
+
+def init_cache_db():
+    try:
+        conn = sqlite3.connect(get_cache_db_path())
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS container_cache (
+                obj_id INTEGER PRIMARY KEY,
+                container_no TEXT NOT NULL,
+                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error initializing cache database: {e}")
+
+init_cache_db()
+
+def get_cached_container_no(obj_id: int) -> Optional[str]:
+    try:
+        conn = sqlite3.connect(get_cache_db_path())
+        cursor = conn.cursor()
+        cursor.execute("SELECT container_no FROM container_cache WHERE obj_id = ?", (obj_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        print(f"Error reading cache: {e}")
+    return None
+
+def set_cached_container_no(obj_id: int, container_no: str):
+    if not container_no or container_no == "-" or len(container_no.strip()) < 3:
+        return
+    try:
+        conn = sqlite3.connect(get_cache_db_path())
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO container_cache (obj_id, container_no) VALUES (?, ?)", (obj_id, container_no))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error writing cache: {e}")
+
 def send_soap(url, payload):
     headers = {'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': '""'}
     try:
-        res = requests.post(url, data=payload, headers=headers, timeout=5)
+        res = soap_session.post(url, data=payload, headers=headers, timeout=5)
         return res.text
     except Exception as e:
         print(f"SOAP Request Error to {url}: {e}")
@@ -212,12 +265,15 @@ def get_tasks(limit: int = 100, status: str = "all"):
         
         tasks = []
         for row in rows:
+            obj_id = row["id"]
+            cached_container = get_cached_container_no(obj_id)
             tasks.append({
-                "id": row["id"],
+                "id": obj_id,
                 "task_id": row["task_id"],
                 "model": row["model"],
                 "create_time": row["createTime"],
-                "state": row["state"]
+                "state": row["state"],
+                "container_no": cached_container or "-"
             })
             
         conn.close()
@@ -311,6 +367,10 @@ def get_task_details(obj_id: int):
 @app.get("/api/tasks/{obj_id}/manifest")
 def get_task_manifest(obj_id: int):
     """Fast endpoint just to get Container No for the table view."""
+    cached_val = get_cached_container_no(obj_id)
+    if cached_val:
+        return {"container_no": cached_val}
+        
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -341,7 +401,12 @@ def get_task_manifest(obj_id: int):
             
         # We only need manifest data, we can reuse fetch_ips_realtime_data
         _, manifest_data = fetch_ips_realtime_data(container_picno)
-        return {"container_no": manifest_data.get("container_no", "-")}
+        container_no = manifest_data.get("container_no", "-")
+        
+        if container_no and container_no != "-" and len(container_no.strip()) >= 3:
+            set_cached_container_no(obj_id, container_no)
+            
+        return {"container_no": container_no}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -29,7 +29,11 @@ function getStateClass(state) {
     return 'state-default';
 }
 
+let isFetching = false;
+
 async function fetchTasks() {
+    if (isFetching) return;
+    isFetching = true;
     try {
         refreshBtn.innerHTML = '<div class="spinner" style="width: 14px; height: 14px; border-width: 2px; margin:0;"></div> Refreshing...';
         
@@ -65,16 +69,19 @@ async function fetchTasks() {
             window.currentDateRange = `${oldestDate.getFullYear()}-${String(oldestDate.getMonth() + 1).padStart(2, '0')}-${String(oldestDate.getDate()).padStart(2, '0')} - ${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         }
 
-        // Render all rows IMMEDIATELY with '-' for container numbers
+        // Render all rows IMMEDIATELY
         tbody.innerHTML = '';
         tasks.forEach((task, index) => {
             const tr = document.createElement('tr');
             const result = task.properties?.result;
+            // Use container_no if returned, otherwise show '...' to fetch in background
+            const showNo = task.container_no && task.container_no !== '-' ? task.container_no : '...';
+            const colorStyle = showNo === '...' ? 'color: var(--text-muted);' : '';
             tr.innerHTML = `
                 <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
                 <td>${index + 1}</td>
                 <td><span class="uuid-cell">${task.task_id}</span></td>
-                <td id="container-cell-${task.id}" style="color: var(--text-muted);">...</td>
+                <td id="container-cell-${task.id}" style="${colorStyle}">${showNo}</td>
                 <td style="text-transform: capitalize;">${task.model || '-'}</td>
                 <td><span class="state-badge ${getStateClass(task.state)}">${task.state || 'UNKNOWN'}</span></td>
                 <td style="color: #9ba1a6; font-size: 0.85rem;">${formatTime(task.create_time)}</td>
@@ -90,10 +97,11 @@ async function fetchTasks() {
         updateCheckboxListeners();
         performSearch();
         
-        // Fetch container numbers in the background and update cells as they arrive
+        // Fetch container numbers in the background only for tasks without cached numbers
+        const tasksToFetch = tasks.filter(task => !task.container_no || task.container_no === '-');
         const BATCH_SIZE = 10;
-        for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
-            const batch = tasks.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < tasksToFetch.length; i += BATCH_SIZE) {
+            const batch = tasksToFetch.slice(i, i + BATCH_SIZE);
             const batchPromises = batch.map(async (task) => {
                 try {
                     const res = await fetch(`http://192.111.111.80:8000/api/tasks/${task.id}/manifest`);
@@ -104,6 +112,8 @@ async function fetchTasks() {
                             cell.textContent = mData.container_no || '-';
                             cell.style.color = '';
                         }
+                        // Update the container_no on the task object in memory
+                        task.container_no = mData.container_no || '-';
                     }
                 } catch (e) {
                     const cell = document.getElementById(`container-cell-${task.id}`);
@@ -125,6 +135,7 @@ async function fetchTasks() {
         setTimeout(() => {
             refreshBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.21l-5.6 5.6"/></svg> Refresh Manual`;
         }, 500);
+        isFetching = false;
     }
 }
 
