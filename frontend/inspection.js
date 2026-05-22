@@ -180,12 +180,10 @@ async function submitInspection() {
         const data = await res.json();
         
         if (res.ok) {
-            Swal.fire('Berhasil!', 'Data telah tersimpan di server Nuctech dan task disubmit.', 'success').then(() => {
-                if (window.opener && !window.opener.closed) {
-                    window.opener.fetchTasks();
-                }
-                window.close();
-            });
+            if (window.opener && !window.opener.closed) {
+                window.opener.fetchTasks();
+            }
+            window.close();
         } else {
             Swal.fire('Error', data.detail || data.error, 'error');
             btn.innerHTML = originalText;
