@@ -417,12 +417,14 @@ def update_and_submit_task(obj_id: int, data: InspectionData):
         # We can just decode the whole Siinfo, replace what we need, and re-encode.
         siinfo_un = html.unescape(siinfo_content)
         
-        # Replace container_no
-        siinfo_un = re.sub(r'<container_no>.*?</container_no>', f'<container_no>{data.container_no}</container_no>', siinfo_un, count=1)
+        # Replace container_no (escape backslashes for re.sub replacement)
+        safe_container_no = data.container_no.replace('\\', '\\\\')
+        siinfo_un = re.sub(r'<container_no>.*?</container_no>', f'<container_no>{safe_container_no}</container_no>', siinfo_un, count=1)
         
         # Replace g_v_no (Front Vehicle)
+        safe_front_vehicle = data.front_vehicle.replace('\\', '\\\\')
         if '<g_v_no>' in siinfo_un:
-            siinfo_un = re.sub(r'<g_v_no>.*?</g_v_no>', f'<g_v_no>{data.front_vehicle}</g_v_no>', siinfo_un, count=1)
+            siinfo_un = re.sub(r'<g_v_no>.*?</g_v_no>', f'<g_v_no>{safe_front_vehicle}</g_v_no>', siinfo_un, count=1)
         else:
             # If not present, try to inject it into <container>
             siinfo_un = siinfo_un.replace('</container>', f'<g_v_no>{data.front_vehicle}</g_v_no></container>')
