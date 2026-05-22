@@ -134,6 +134,85 @@ refreshBtn.addEventListener('click', fetchTasks);
 limitFilter.addEventListener('change', fetchTasks);
 statusFilter.addEventListener('change', fetchTasks);
 
+// ===== TABLE SORTING =====
+let currentSortCol = null;
+let currentSortDir = null; // 'asc' or 'desc'
+
+// Column index mapping for data-sort attributes
+const sortColMap = {
+    'index': 1,
+    'task_id': 2,
+    'container_no': 3,
+    'model': 4,
+    'state': 5,
+    'create_time': 6
+};
+
+function sortTable(colKey) {
+    const colIndex = sortColMap[colKey];
+    if (colIndex === undefined) return;
+    
+    // Toggle direction
+    if (currentSortCol === colKey) {
+        currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortCol = colKey;
+        currentSortDir = 'asc';
+    }
+    
+    // Update header icons
+    document.querySelectorAll('th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+    });
+    const activeHeader = document.querySelector(`th[data-sort="${colKey}"]`);
+    if (activeHeader) {
+        activeHeader.classList.add(currentSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+    
+    // Get all data rows
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (rows.length === 0 || rows[0].cells.length < 8) return;
+    
+    rows.sort((a, b) => {
+        let valA = a.cells[colIndex]?.textContent.trim() || '';
+        let valB = b.cells[colIndex]?.textContent.trim() || '';
+        
+        // Numeric sort for # column
+        if (colKey === 'index') {
+            return currentSortDir === 'asc' ? parseInt(valA) - parseInt(valB) : parseInt(valB) - parseInt(valA);
+        }
+        
+        // Try date sort for create_time
+        if (colKey === 'create_time') {
+            const dateA = new Date(valA);
+            const dateB = new Date(valB);
+            if (!isNaN(dateA) && !isNaN(dateB)) {
+                return currentSortDir === 'asc' ? dateA - dateB : dateB - dateA;
+            }
+        }
+        
+        // Default: case-insensitive string sort
+        valA = valA.toLowerCase();
+        valB = valB.toLowerCase();
+        if (valA < valB) return currentSortDir === 'asc' ? -1 : 1;
+        if (valA > valB) return currentSortDir === 'asc' ? 1 : -1;
+        return 0;
+    });
+    
+    // Re-append sorted rows and re-number
+    rows.forEach((row, idx) => {
+        row.cells[1].textContent = idx + 1;
+        tbody.appendChild(row);
+    });
+}
+
+// Attach click listeners to sortable headers
+document.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+        sortTable(th.dataset.sort);
+    });
+});
+
 autoRefreshToggle.addEventListener('change', (e) => {
     if (e.target.checked) {
         fetchTasks();
