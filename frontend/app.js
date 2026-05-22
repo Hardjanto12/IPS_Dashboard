@@ -357,9 +357,27 @@ async function applyDocHighlights() {
     const countSpan = document.getElementById('missing-doc-count');
     
     if (!isHighlightingDocs) {
-        // Remove all highlights
+        // Remove all highlights and restore original order (by create_time desc)
         rows.forEach(row => row.classList.remove('highlight-no-doc'));
         if (countSpan) countSpan.style.display = 'none';
+        
+        // Restore original order: sort by Waktu Masuk descending
+        const allRows = Array.from(tbody.querySelectorAll('tr'));
+        if (allRows.length > 0 && allRows[0].cells.length >= 8) {
+            allRows.sort((a, b) => {
+                const dateA = new Date(a.cells[6]?.textContent.trim());
+                const dateB = new Date(b.cells[6]?.textContent.trim());
+                return dateB - dateA;
+            });
+            allRows.forEach((row, idx) => {
+                row.cells[1].textContent = idx + 1;
+                tbody.appendChild(row);
+            });
+        }
+        // Reset sort indicators
+        currentSortCol = null;
+        currentSortDir = null;
+        document.querySelectorAll('th.sortable').forEach(th => th.classList.remove('sort-asc', 'sort-desc'));
         return;
     }
     
@@ -390,7 +408,8 @@ async function applyDocHighlights() {
     let highlightCount = 0;
     const upperMissingDocs = missingDocsList.map(doc => String(doc).toUpperCase());
     // Apply highlights based on container number in cell index 3
-    rows.forEach(row => {
+    const allRows = Array.from(tbody.querySelectorAll('tr'));
+    allRows.forEach(row => {
         if (row.cells.length < 8) return; // Skip error/info rows
         const containerNo = row.cells[3]?.textContent.trim().toUpperCase();
         
@@ -400,6 +419,15 @@ async function applyDocHighlights() {
         } else {
             row.classList.remove('highlight-no-doc');
         }
+    });
+    
+    // Move highlighted rows to top, keep relative order within each group
+    const highlighted = allRows.filter(r => r.classList.contains('highlight-no-doc'));
+    const normal = allRows.filter(r => !r.classList.contains('highlight-no-doc'));
+    const sorted = [...highlighted, ...normal];
+    sorted.forEach((row, idx) => {
+        row.cells[1].textContent = idx + 1;
+        tbody.appendChild(row);
     });
     
     if (countSpan) {
