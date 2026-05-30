@@ -1,99 +1,124 @@
-# Panduan Instalasi IPS Dashboard sebagai Windows Service (Offline/Latar Belakang)
+# Panduan Instalasi IPS Dashboard sebagai Windows Service
 
-Dokumen ini berisi panduan langkah-demi-langkah untuk melakukan kompilasi (*compile*) backend dan frontend menjadi satu kesatuan, serta menginstalnya sebagai Windows Service agar berjalan secara otomatis di latar belakang tanpa GUI/Console Window.
+Dokumen ini berisi panduan untuk melakukan kompilasi (*compile*) dan menginstal IPS Dashboard sebagai Windows Service agar berjalan secara otomatis di latar belakang tanpa GUI/Console Window.
 
----
-
-## 1. Persiapan Awal (Offline)
-
-Jika server target tidak memiliki akses internet, unduh berkas berikut terlebih dahulu dari komputer lain:
-1. **NSSM (Non-Sucking Service Manager)**: 
-   * Unduh dari [nssm.cc/download](https://nssm.cc/download).
-   * Ekstrak file zip, lalu salin berkas `nssm.exe` (pilih versi di dalam folder `win64/`) ke folder server target.
-2. Pastikan Python dan library yang dibutuhkan (seperti `pyinstaller`, `fastapi`, `uvicorn`, dll.) sudah terinstal di server.
+> **Semua proses di bawah ini bisa dilakukan secara offline (tanpa internet).** File `nssm.exe` sudah disertakan di dalam project.
 
 ---
 
-## 2. Kompilasi Program (Compile to Executable)
+## Prasyarat
 
-Kita akan mengompilasi backend FastAPI menjadi berkas biner `.exe` yang akan berjalan secara *windowless* (tanpa memunculkan jendela Command Prompt) menggunakan file konfigurasi `.spec` yang sudah disediakan.
+Pastikan hal-hal berikut sudah terpenuhi di server target:
+- **Python** dan library yang dibutuhkan (`pyinstaller`, `fastapi`, `uvicorn`, dll.) sudah terinstal *(hanya diperlukan untuk proses compile)*.
+- Folder project sudah lengkap, termasuk folder `frontend/` dan `backend/`.
 
-1. Buka Command Prompt (CMD) atau PowerShell di folder project backend (`D:\Source Codes\Nuctech\IPS_Dashboard\backend`).
-2. Jalankan perintah kompilasi berikut:
+---
+
+## 1. Kompilasi Program (Compile to Executable)
+
+Kompilasi backend FastAPI menjadi file `.exe` yang berjalan tanpa jendela CMD (*windowless*).
+
+1. Buka Command Prompt (CMD) atau PowerShell di folder project backend:
+   ```cmd
+   cd "D:\Source Codes\Nuctech\IPS_Dashboard\backend"
+   ```
+2. Jalankan perintah kompilasi:
    ```cmd
    pyinstaller BPM_API_Server.spec
    ```
-3. Setelah proses selesai, file hasil kompilasi akan berada di folder:
-   `D:\Source Codes\Nuctech\IPS_Dashboard\backend\dist\BPM_API_Server\BPM_API_Server.exe`
+3. Setelah proses selesai, file hasil kompilasi akan berada di:
+   ```
+   backend\dist\BPM_API_Server.exe
+   ```
+
+> **Catatan:** Jika ingin melakukan debug (melihat log di console), compile menggunakan `BPM_API_Server_Visible.spec` sebagai gantinya.
 
 ---
 
-## 3. Struktur Folder Produksi
+## 2. Struktur Folder Produksi
 
-Agar backend FastAPI dapat melayani (*serve*) halaman frontend, folder `frontend` harus diletakkan sejajar atau sesuai dengan relatif path yang dicari oleh program (relatif terhadap file `.exe`).
+Pastikan folder `frontend` berada satu tingkat di atas folder tempat file `.exe` berada, sehingga backend dapat menemukannya secara otomatis.
 
-Struktur direktori di server produksi sebaiknya seperti ini:
 ```text
-D:\Nuctech_IPS_Dashboard\
-├── frontend\                  <-- Salin folder "frontend" lengkap ke sini
+IPS_Dashboard\
+├── nssm.exe                      <-- Sudah disertakan dalam project
+├── install_service.bat            <-- Script install otomatis
+├── uninstall_service.bat          <-- Script uninstall otomatis
+├── frontend\                      <-- Halaman web dashboard
 │   ├── index.html
+│   ├── app.js
+│   ├── inspection.html
 │   ├── inspection.js
-│   └── ...
+│   ├── style.css
+│   └── assets\
 └── backend\
+    ├── main.py
+    ├── BPM_API_Server.spec
     └── dist\
-        └── BPM_API_Server\
-            ├── BPM_API_Server.exe   <-- File executable utama
-            └── ...
+        └── BPM_API_Server.exe     <-- File executable hasil compile
 ```
 
 ---
 
-## 4. Instalasi Windows Service Menggunakan NSSM
+## 3. Instalasi Windows Service (Otomatis)
 
-Langkah ini akan mendaftarkan berkas executable kita ke dalam Windows Services.
+Cara termudah untuk menginstal service adalah menggunakan script otomatis yang sudah disediakan.
 
-1. Jalankan Command Prompt (CMD) sebagai **Administrator**.
-2. Masuk ke folder tempat Anda meletakkan `nssm.exe` (misalnya di folder backend):
-   ```cmd
-   d:
-   cd "D:\Source Codes\Nuctech\IPS_Dashboard\backend"
-   ```
-3. Jalankan perintah instalasi service (kita beri nama service ini `IPS_Dashboard`):
-   ```cmd
-   nssm install IPS_Dashboard "D:\Source Codes\Nuctech\IPS_Dashboard\backend\dist\BPM_API_Server\BPM_API_Server.exe"
-   ```
-4. Mengonfigurasi direktori kerja (*working directory*) agar pencarian folder `frontend` relatif berjalan dengan benar:
-   ```cmd
-   nssm set IPS_Dashboard AppDirectory "D:\Source Codes\Nuctech\IPS_Dashboard\backend\dist\BPM_API_Server"
-   ```
+### Langkah-langkah:
+1. Buka folder project `IPS_Dashboard` di File Explorer.
+2. Klik kanan pada file **`install_service.bat`** → pilih **Run as administrator**.
+3. Script akan otomatis:
+   - Memeriksa apakah `nssm.exe` dan `BPM_API_Server.exe` tersedia.
+   - Menghapus service lama jika sudah pernah diinstal sebelumnya.
+   - Mendaftarkan service baru dengan nama `IPS_Dashboard`.
+   - Mengatur service agar **auto-start** saat Windows boot.
+   - Mengatur **auto-restart** jika service crash (restart otomatis setelah 5 detik).
+   - Langsung menjalankan service.
 
----
-
-## 5. Mengelola Service di Windows (`services.msc`)
-
-Setelah berhasil diinstal, Anda dapat mengelola jalannya server langsung melalui Windows Services Manager:
-
-1. Tekan tombol `Windows + R` di keyboard, ketik **`services.msc`**, lalu tekan **Enter**.
-2. Cari service dengan nama **`IPS_Dashboard`**.
-3. **Mengatur Auto-Start**:
-   * Klik kanan pada `IPS_Dashboard` -> **Properties**.
-   * Pada kolom *Startup type*, ubah menjadi **Automatic**.
-   * Klik **Apply** dan **OK**. (Service akan otomatis menyala setiap kali server Windows dihidupkan).
-4. **Menyalakan / Mematikan**:
-   * Klik kanan pada `IPS_Dashboard` -> Pilih **Start** untuk menyalakan.
-   * Pilih **Stop** untuk mematikan.
+### Setelah berhasil:
+- Dashboard dapat diakses di browser: **`http://localhost:8000/dashboard`**
+- Atau dari komputer lain dalam jaringan: **`http://<IP_SERVER>:8000/dashboard`**
 
 ---
 
-## 6. Cara Menghapus Service (Uninstall)
+## 4. Mengelola Service di Windows (`services.msc`)
 
-Jika di kemudian hari Anda ingin menghapus service ini dari sistem Windows:
-1. Buka CMD sebagai **Administrator**.
-2. Hentikan service terlebih dahulu:
-   ```cmd
-   nssm stop IPS_Dashboard
-   ```
-3. Hapus service dengan perintah:
-   ```cmd
-   nssm remove IPS_Dashboard confirm
-   ```
+Setelah berhasil diinstal, Anda dapat mengelola service melalui Windows Services Manager:
+
+1. Tekan `Windows + R`, ketik **`services.msc`**, lalu tekan **Enter**.
+2. Cari service dengan nama **`IPS Dashboard Server`** (nama internal: `IPS_Dashboard`).
+3. **Menyalakan / Mematikan**:
+   - Klik kanan → **Start** untuk menyalakan.
+   - Klik kanan → **Stop** untuk mematikan.
+4. **Mengatur Startup**:
+   - Klik kanan → **Properties** → ubah *Startup type* sesuai kebutuhan:
+     - `Automatic` → Otomatis menyala saat Windows boot.
+     - `Manual` → Hanya menyala jika di-start manual.
+     - `Disabled` → Tidak bisa dinyalakan.
+
+---
+
+## 5. Menghapus Service (Uninstall)
+
+### Cara Otomatis (Direkomendasikan):
+1. Klik kanan pada file **`uninstall_service.bat`** → pilih **Run as administrator**.
+2. Ketik **Y** untuk mengkonfirmasi penghapusan.
+3. Service akan dihentikan dan dihapus dari sistem.
+
+### Cara Manual (Jika diperlukan):
+Buka CMD sebagai Administrator, lalu jalankan:
+```cmd
+nssm stop IPS_Dashboard
+nssm remove IPS_Dashboard confirm
+```
+
+---
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---------|--------|
+| Dashboard tidak bisa diakses (`Not Found`) | Pastikan folder `frontend` berada satu tingkat di atas lokasi file `.exe` |
+| Service gagal start | Jalankan `BPM_API_Server_Visible.exe` secara manual untuk melihat error di console |
+| Port 8000 sudah dipakai | Hentikan proses lain yang menggunakan port 8000, atau ubah port di `main.py` |
+| Script `.bat` minta Administrator | Klik kanan file `.bat` → **Run as administrator** |
