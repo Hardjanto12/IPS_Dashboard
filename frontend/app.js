@@ -227,7 +227,7 @@ document.querySelectorAll('th.sortable').forEach(th => {
 autoRefreshToggle.addEventListener('change', (e) => {
     if (e.target.checked) {
         fetchTasks();
-        pollingInterval = setInterval(fetchTasks, 10000);
+        pollingInterval = setInterval(fetchTasks, 15000);
     } else {
         clearInterval(pollingInterval);
     }
@@ -239,7 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Auto-polling setup
     if (autoRefreshToggle.checked) {
-        pollingInterval = setInterval(fetchTasks, 10000);
+        pollingInterval = setInterval(fetchTasks, 15000);
     }
 });
 

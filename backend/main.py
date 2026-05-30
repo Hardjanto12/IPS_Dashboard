@@ -6,6 +6,8 @@ import requests
 import datetime
 import urllib3
 import html
+import threading
+import asyncio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -37,13 +39,17 @@ IDR_API_URL = "http://192.111.111.80:47361"
 def get_db_connection():
     if not os.path.exists(DB_PATH):
         raise HTTPException(status_code=500, detail="Database file not found")
-    conn = sqlite3.connect(DB_PATH)
+    # Open in read-only mode to prevent blocking ServiceBPM writes
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
 # --- SOAP Helpers ---
 # --- SOAP Session & Caching Helpers ---
 soap_session = requests.Session()
+
+# Rate limiting: max 3 concurrent SOAP calls to prevent overloading Nuctech services
+soap_semaphore = threading.Semaphore(3)
 
 def get_cache_db_path():
     if getattr(sys, 'frozen', False):
@@ -52,33 +58,39 @@ def get_cache_db_path():
         app_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(app_path, "dashboard_cache.db")
 
-def init_cache_db():
-    try:
-        conn = sqlite3.connect(get_cache_db_path())
-        cursor = conn.cursor()
-        cursor.execute("""
+# Persistent cache DB connection with thread-safe locking
+_cache_conn = None
+_cache_lock = threading.Lock()
+
+def _get_cache_conn():
+    global _cache_conn
+    if _cache_conn is None:
+        _cache_conn = sqlite3.connect(get_cache_db_path(), check_same_thread=False)
+        _cache_conn.execute("PRAGMA journal_mode=WAL")
+        _cache_conn.execute("""
             CREATE TABLE IF NOT EXISTS container_cache (
                 obj_id INTEGER PRIMARY KEY,
                 container_no TEXT NOT NULL,
                 fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Error initializing cache database: {e}")
+        _cache_conn.commit()
+    return _cache_conn
 
-init_cache_db()
+# Initialize cache on startup
+try:
+    _get_cache_conn()
+except Exception as e:
+    print(f"Error initializing cache database: {e}")
 
 def get_cached_container_no(obj_id: int) -> Optional[str]:
     try:
-        conn = sqlite3.connect(get_cache_db_path())
-        cursor = conn.cursor()
-        cursor.execute("SELECT container_no FROM container_cache WHERE obj_id = ?", (obj_id,))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            return row[0]
+        with _cache_lock:
+            cursor = _get_cache_conn().cursor()
+            cursor.execute("SELECT container_no FROM container_cache WHERE obj_id = ?", (obj_id,))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
     except Exception as e:
         print(f"Error reading cache: {e}")
     return None
@@ -87,22 +99,25 @@ def set_cached_container_no(obj_id: int, container_no: str):
     if not container_no or container_no == "-" or len(container_no.strip()) < 3:
         return
     try:
-        conn = sqlite3.connect(get_cache_db_path())
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO container_cache (obj_id, container_no) VALUES (?, ?)", (obj_id, container_no))
-        conn.commit()
-        conn.close()
+        with _cache_lock:
+            conn = _get_cache_conn()
+            conn.execute("INSERT OR REPLACE INTO container_cache (obj_id, container_no) VALUES (?, ?)", (obj_id, container_no))
+            conn.commit()
     except Exception as e:
         print(f"Error writing cache: {e}")
 
 def send_soap(url, payload):
     headers = {'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': '""'}
+    # Acquire semaphore to limit concurrent SOAP calls (max 3)
+    soap_semaphore.acquire()
     try:
         res = soap_session.post(url, data=payload, headers=headers, timeout=5)
         return res.text
     except Exception as e:
         print(f"SOAP Request Error to {url}: {e}")
         return ""
+    finally:
+        soap_semaphore.release()
 
 def extract_xml_value(xml_str, tag_name):
     match = re.search(f'<{tag_name}>(.*?)</{tag_name}>', xml_str, re.IGNORECASE | re.DOTALL)
