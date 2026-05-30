@@ -671,7 +671,20 @@ if getattr(sys, 'frozen', False):
 else:
     application_path = os.path.dirname(os.path.abspath(__file__))
 
-frontend_path = os.path.abspath(os.path.join(application_path, "../frontend"))
+# Search for frontend folder in multiple locations (works for both .py and .exe)
+frontend_path = None
+_search_dir = application_path
+for _ in range(5):  # search up to 5 levels up
+    candidate = os.path.join(_search_dir, "frontend")
+    if os.path.isdir(candidate) and os.path.isfile(os.path.join(candidate, "index.html")):
+        frontend_path = os.path.abspath(candidate)
+        break
+    _search_dir = os.path.dirname(_search_dir)
+
+if frontend_path:
+    print(f"Frontend found at: {frontend_path}")
+else:
+    print(f"Warning: Frontend directory not found (searched from {application_path})")
 
 class CachedStaticFiles(StaticFiles):
     def file_response(self, *args, **kwargs):
@@ -680,14 +693,12 @@ class CachedStaticFiles(StaticFiles):
         response.headers["Cache-Control"] = "public, max-age=3600"
         return response
 
-if os.path.exists(frontend_path):
+if frontend_path and os.path.exists(frontend_path):
     app.mount("/dashboard", CachedStaticFiles(directory=frontend_path, html=True), name="frontend")
     
     @app.get("/")
     def root():
         return RedirectResponse(url="/dashboard/index.html")
-else:
-    print(f"Warning: Frontend directory not found at {frontend_path}")
 
 
 if __name__ == "__main__":
