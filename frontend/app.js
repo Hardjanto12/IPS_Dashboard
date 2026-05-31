@@ -97,8 +97,12 @@ async function fetchTasks() {
         updateCheckboxListeners();
         performSearch();
         
-        // Fetch container numbers in the background only for tasks without cached numbers
-        const tasksToFetch = tasks.filter(task => !task.container_no || task.container_no === '-');
+        // Safe Fetching: Fetch container numbers ONLY for tasks that have finished scanning.
+        // Doing this while state is 'scan.begin' will interrupt CCR image upload.
+        const tasksToFetch = tasks.filter(task => 
+            (!task.container_no || task.container_no === '-') && 
+            task.state !== 'scan.begin'
+        );
         const BATCH_SIZE = 10;
         for (let i = 0; i < tasksToFetch.length; i += BATCH_SIZE) {
             const batch = tasksToFetch.slice(i, i + BATCH_SIZE);
