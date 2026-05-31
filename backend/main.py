@@ -266,7 +266,9 @@ def get_tasks(limit: int = 100, status: str = "all"):
         """
         
         params = []
-        if status != "all":
+        if status == "safe":
+            query += " AND s.state NOT IN ('created', 'scan.begin', 'scan.ready')"
+        elif status != "all":
             query += " AND s.state = ?"
             params.append(status)
             

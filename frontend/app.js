@@ -2,7 +2,6 @@ const API_URL = 'http://192.111.111.80:8000/api/tasks';
 const refreshBtn = document.getElementById('refresh-btn');
 const tbody = document.getElementById('task-body');
 const limitFilter = document.getElementById('limit-filter');
-const statusFilter = document.getElementById('status-filter');
 const autoRefreshToggle = document.getElementById('auto-refresh-toggle');
 let pollingInterval = null;
 
@@ -44,7 +43,7 @@ async function fetchTasks() {
         </td></tr>`;
         
         const limitValue = limitFilter.value;
-        const statusValue = statusFilter.value;
+        const statusValue = "safe";
         const fetchUrl = `${API_URL}?limit=${limitValue}&status=${statusValue}`;
         
         const response = await fetch(fetchUrl);
