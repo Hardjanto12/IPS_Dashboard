@@ -269,8 +269,8 @@ def get_tasks(limit: int = 100, status: str = "all"):
         if status == "safe":
             # Hanya ambil 'container', abaikan 'truck' (TASKIDAUTOBIND)
             query += " AND lower(o.model) = 'container'"
-            # Hanya ambil yang sedang mengantre untuk diinspeksi. Abaikan yang sedang scan, dan abaikan yang sudah selesai (Terkirim/Selesai)
-            query += " AND s.state NOT IN ('created', 'scan.begin', 'scan.ready', 'check.end', 'datasend.ready', 'datasend.end', 'delete')"
+            # Hanya tampilkan data dengan state check.ready
+            query += " AND lower(s.state) = 'check.ready'"
         elif status != "all":
             query += " AND s.state = ?"
             params.append(status)
