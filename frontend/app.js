@@ -146,7 +146,6 @@ async function fetchTasks() {
 refreshBtn.addEventListener('click', fetchTasks);
 
 limitFilter.addEventListener('change', fetchTasks);
-statusFilter.addEventListener('change', fetchTasks);
 
 // ===== TABLE SORTING =====
 let currentSortCol = null;
