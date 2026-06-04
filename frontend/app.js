@@ -96,16 +96,21 @@ async function fetchTasks() {
         updateCheckboxListeners();
         performSearch();
         
+        // Keep track of tasks we've already tried to fetch in this session
+        window.attemptedFetches = window.attemptedFetches || new Set();
+        
         // Safe Fetching: Fetch container numbers ONLY for tasks that have finished scanning.
         // Doing this while state is 'scan.begin' will interrupt CCR image upload.
         const tasksToFetch = tasks.filter(task => 
             (!task.container_no || task.container_no === '-') && 
-            task.state !== 'scan.begin'
+            task.state !== 'scan.begin' &&
+            !window.attemptedFetches.has(task.id)
         );
         const BATCH_SIZE = 10;
         for (let i = 0; i < tasksToFetch.length; i += BATCH_SIZE) {
             const batch = tasksToFetch.slice(i, i + BATCH_SIZE);
             const batchPromises = batch.map(async (task) => {
+                window.attemptedFetches.add(task.id);
                 try {
                     const res = await fetch(`http://192.111.111.80:8000/api/tasks/${task.id}/manifest`);
                     if (res.ok) {

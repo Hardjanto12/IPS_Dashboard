@@ -96,8 +96,10 @@ def get_cached_container_no(obj_id: int) -> Optional[str]:
     return None
 
 def set_cached_container_no(obj_id: int, container_no: str):
-    if not container_no or container_no == "-" or len(container_no.strip()) < 3:
+    if not container_no or (len(container_no.strip()) < 3 and container_no != "-"):
         return
+    if container_no == "-":
+        container_no = "NOT_FOUND"
     try:
         with _cache_lock:
             conn = _get_cache_conn()
@@ -287,13 +289,14 @@ def get_tasks(limit: int = 100, status: str = "all"):
         for row in rows:
             obj_id = row["id"]
             cached_container = get_cached_container_no(obj_id)
+            display_container = cached_container if cached_container and cached_container != "NOT_FOUND" else "-"
             tasks.append({
                 "id": obj_id,
                 "task_id": row["task_id"],
                 "model": row["model"],
                 "create_time": row["createTime"],
                 "state": row["state"],
-                "container_no": cached_container or "-"
+                "container_no": display_container
             })
             
         conn.close()
@@ -389,7 +392,7 @@ def get_task_manifest(obj_id: int):
     """Fast endpoint just to get Container No for the table view."""
     cached_val = get_cached_container_no(obj_id)
     if cached_val:
-        return {"container_no": cached_val}
+        return {"container_no": "-" if cached_val == "NOT_FOUND" else cached_val}
         
     try:
         conn = get_db_connection()
@@ -423,7 +426,7 @@ def get_task_manifest(obj_id: int):
         _, manifest_data = fetch_ips_realtime_data(container_picno)
         container_no = manifest_data.get("container_no", "-")
         
-        if container_no and container_no != "-" and len(container_no.strip()) >= 3:
+        if container_no:
             set_cached_container_no(obj_id, container_no)
             
         return {"container_no": container_no}
