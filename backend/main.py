@@ -58,21 +58,23 @@ def get_container_from_idr_db(container_picno: str) -> Optional[str]:
             login_timeout=5
         )
         cursor = conn.cursor(as_dict=True)
-        # Query: find the container_no for this PICNO/UNITID
+        # Query: find the XML info for this PICNO/UNITID
         cursor.execute("""
-            SELECT TOP 1 g.container_no
-            FROM IDR_IMAGE i
-            JOIN IDR_CHECK_UNIT cu ON cu.IMAGEID = i.ID
-            JOIN IDR_SIIG s ON s.CHECKUNITID = cu.ID AND s.TYPE = 'inputinfo'
-            JOIN IDR_SII_INPUTINFO_GENERAL ig ON ig.SIIGID = s.ID
-            JOIN IDR_SII_INPUTINFO_CONTAINER g ON g.GENERALID = ig.ID
-            WHERE cu.UNITID = %s
-            ORDER BY i.SCANTIME DESC
+            SELECT TOP 1 s.TYPEVALUE
+            FROM IDR_CHECK_UNIT cu
+            JOIN IDR_CHECK_SIIG cs ON cs.CHECKUNITID = cu.ID
+            JOIN IDR_SIIG s ON s.ID = cs.SIIGID
+            WHERE cu.UNITID = %s AND s.TYPE = 'inputinfo'
+            ORDER BY cu.CHECKINTIME DESC
         """, (container_picno,))
         row = cursor.fetchone()
         conn.close()
-        if row and row.get("container_no"):
-            return row["container_no"].strip()
+        
+        if row and row.get("TYPEVALUE"):
+            xml_str = row["TYPEVALUE"]
+            match = re.search(r'<container_no>([^<]*)</container_no>', xml_str)
+            if match and match.group(1).strip():
+                return match.group(1).strip()
         return None
     except Exception as e:
         print(f"IDR SQL Server query error: {e}")
