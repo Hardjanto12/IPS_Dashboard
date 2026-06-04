@@ -8,6 +8,7 @@ import urllib3
 import html
 import threading
 import asyncio
+import pymssql
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -35,6 +36,47 @@ if not os.path.exists(DB_PATH):
 
 BPM_API_URL = "http://192.111.111.80:997"
 IDR_API_URL = "http://192.111.111.80:47361"
+
+# --- IDR SQL Server Config (same as official Nuctech IPS app) ---
+IDR_SQL_SERVER = "192.111.111.80"
+IDR_SQL_DB = "idr_rdb"
+IDR_SQL_USER = "sa"
+IDR_SQL_PASS = "Nuctech_50"
+
+def get_container_from_idr_db(container_picno: str) -> Optional[str]:
+    """Read container_no directly from SQL Server idr_rdb — same method as official Nuctech IPS.
+    This does NOT touch ServiceIDR SOAP at all, so ServiceAssociate is never interrupted."""
+    if not container_picno:
+        return None
+    try:
+        conn = pymssql.connect(
+            server=IDR_SQL_SERVER,
+            user=IDR_SQL_USER,
+            password=IDR_SQL_PASS,
+            database=IDR_SQL_DB,
+            timeout=5,
+            login_timeout=5
+        )
+        cursor = conn.cursor(as_dict=True)
+        # Query: find the container_no for this PICNO/UNITID
+        cursor.execute("""
+            SELECT TOP 1 g.container_no
+            FROM IDR_IMAGE i
+            JOIN IDR_CHECK_UNIT cu ON cu.IMAGEID = i.ID
+            JOIN IDR_SIIG s ON s.CHECKUNITID = cu.ID AND s.TYPE = 'inputinfo'
+            JOIN IDR_SII_INPUTINFO_GENERAL ig ON ig.SIIGID = s.ID
+            JOIN IDR_SII_INPUTINFO_CONTAINER g ON g.GENERALID = ig.ID
+            WHERE cu.UNITID = %s
+            ORDER BY i.SCANTIME DESC
+        """, (container_picno,))
+        row = cursor.fetchone()
+        conn.close()
+        if row and row.get("container_no"):
+            return row["container_no"].strip()
+        return None
+    except Exception as e:
+        print(f"IDR SQL Server query error: {e}")
+        return None
 
 def get_db_connection():
     if not os.path.exists(DB_PATH):
@@ -389,7 +431,7 @@ def get_task_details(obj_id: int):
 
 @app.get("/api/tasks/{obj_id}/manifest")
 def get_task_manifest(obj_id: int):
-    """Fast endpoint just to get Container No for the table view."""
+    """Get Container No for the table view — reads directly from SQL Server (no SOAP)."""
     cached_val = get_cached_container_no(obj_id)
     if cached_val:
         return {"container_no": "-" if cached_val == "NOT_FOUND" else cached_val}
@@ -402,7 +444,7 @@ def get_task_manifest(obj_id: int):
         obj = cursor.fetchone()
         if not obj:
             conn.close()
-            raise HTTPException(status_code=404, detail="Task not found")
+            return {"container_no": "-"}
             
         container_picno = None
         if obj["model"].lower() == 'container':
@@ -420,19 +462,23 @@ def get_task_manifest(obj_id: int):
         conn.close()
         
         if not container_picno:
+            set_cached_container_no(obj_id, "-")
             return {"container_no": "-"}
             
-        # We only need manifest data, we can reuse fetch_ips_realtime_data
-        _, manifest_data = fetch_ips_realtime_data(container_picno)
-        container_no = manifest_data.get("container_no", "-")
+        # Read directly from SQL Server idr_rdb (same as official Nuctech IPS)
+        # This does NOT use SOAP, so ServiceAssociate is never interrupted
+        container_no = get_container_from_idr_db(container_picno)
         
-        if container_no:
+        if container_no and len(container_no.strip()) >= 3:
             set_cached_container_no(obj_id, container_no)
-            
-        return {"container_no": container_no}
+            return {"container_no": container_no}
+        else:
+            set_cached_container_no(obj_id, "-")
+            return {"container_no": "-"}
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Manifest endpoint error: {e}")
+        return {"container_no": "-"}
 
 from pydantic import BaseModel
 import json
