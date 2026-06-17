@@ -204,7 +204,11 @@ document.addEventListener('keydown', function(e) {
     // Ctrl + Enter to Save & Submit
     if (e.ctrlKey && e.key === 'Enter') {
         e.preventDefault();
-        submitInspection();
+        // Use setTimeout to wait for the user to release the Enter key (keyup)
+        // This prevents SweetAlert from instantly auto-confirming the dialog
+        setTimeout(() => {
+            submitInspection();
+        }, 150);
     }
     
     // Alt + C to focus Container No. form
