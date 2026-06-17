@@ -198,3 +198,22 @@ async function submitInspection() {
 
 // Start
 loadData();
+
+// Shortcut Keys
+document.addEventListener('keydown', function(e) {
+    // Ctrl + Enter to Save & Submit
+    if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        submitInspection();
+    }
+    
+    // Alt + C to focus Container No. form
+    if (e.altKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        const containerInput = document.getElementById('inp-container-no');
+        if (containerInput) {
+            containerInput.focus();
+            containerInput.select(); // Highlight existing text for quick replacement
+        }
+    }
+});
