@@ -141,14 +141,22 @@ async function fetchTasks() {
         tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: #ff3366;">Koneksi ke backend gagal. Pastikan server backend berjalan di port 8000.</td></tr>`;
     } finally {
         setTimeout(() => {
-            refreshBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.21l-5.6 5.6"/></svg> Refresh Manual`;
+            refreshBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.21l-5.6 5.6"/></svg> Refresh`;
         }, 500);
         isFetching = false;
     }
 }
 
 // Event Listeners
-refreshBtn.addEventListener('click', fetchTasks);
+refreshBtn.addEventListener('click', async () => {
+    refreshBtn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin:0 5px 0 0;"></div> Refreshing...`;
+    try {
+        await fetch('http://192.111.111.80:8000/api/cache/clear', { method: 'POST' });
+    } catch(e) {
+        console.error("Failed to clear cache:", e);
+    }
+    fetchTasks();
+});
 
 limitFilter.addEventListener('change', fetchTasks);
 

@@ -294,6 +294,17 @@ def fetch_ips_realtime_data(container_picno):
     return ips_data, manifest_data
 
 # --- API Endpoints ---
+@app.post("/api/cache/clear")
+def clear_dashboard_cache():
+    try:
+        with _cache_lock:
+            conn = _get_cache_conn()
+            conn.execute("DELETE FROM container_cache")
+            conn.commit()
+        return {"status": "success", "message": "Cache cleared"}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/tasks")
 def get_tasks(limit: int = 100, status: str = "all"):
     try:
