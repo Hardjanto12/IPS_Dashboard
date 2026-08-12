@@ -511,13 +511,11 @@ if (openAllBtn) {
         if (highlightedRows.length === 0) return;
         
         let opened = 0;
-        highlightedRows.forEach((row, idx) => {
+        highlightedRows.forEach((row) => {
             const checkbox = row.querySelector('.task-checkbox');
             if (checkbox && checkbox.dataset.id) {
-                // Add a slight delay to prevent browsers from blocking multiple popups
-                setTimeout(() => {
-                    window.open(`inspection.html?id=${checkbox.dataset.id}`, '_blank');
-                }, idx * 200);
+                // Eksekusi window.open secara sinkron (tanpa setTimeout) agar dianggap sebagai satu event klik yang sah
+                window.open(`inspection.html?id=${checkbox.dataset.id}`, '_blank');
                 opened++;
             }
         });
@@ -525,10 +523,11 @@ if (openAllBtn) {
         if (opened > 0) {
             Swal.fire({
                 title: 'Membuka Tab',
-                text: `${opened} task sedang dibuka di tab baru. Pastikan browser Anda mengizinkan popup.`,
-                icon: 'info',
-                timer: 3000,
-                showConfirmButton: false
+                text: `Mencoba membuka ${opened} task. Jika hanya 1 yang berhasil terbuka, lihat pojok kanan atas browser (URL bar), klik peringatan Pop-up Blocker, lalu pilih "Always allow pop-ups" (Selalu izinkan).`,
+                icon: 'warning',
+                timer: 5000,
+                showConfirmButton: true,
+                confirmButtonText: 'Mengerti'
             });
         }
     });
