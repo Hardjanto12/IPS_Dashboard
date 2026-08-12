@@ -379,6 +379,9 @@ async function applyDocHighlights() {
         rows.forEach(row => row.classList.remove('highlight-no-doc'));
         if (countSpan) countSpan.style.display = 'none';
         
+        const openAllBtn = document.getElementById('open-all-highlighted-btn');
+        if (openAllBtn) openAllBtn.style.display = 'none';
+        
         // Restore original order: sort by Waktu Masuk descending
         const allRows = Array.from(tbody.querySelectorAll('tr'));
         if (allRows.length > 0 && allRows[0].cells.length >= 8) {
@@ -469,10 +472,58 @@ async function applyDocHighlights() {
         countSpan.textContent = `${highlightCount} Task`;
         countSpan.style.display = 'inline-block';
     }
+    
+    // Show/hide Open All button
+    const openAllBtn = document.getElementById('open-all-highlighted-btn');
+    if (openAllBtn) {
+        if (isHighlightingDocs && highlightCount > 0) {
+            openAllBtn.style.display = 'inline-flex';
+            openAllBtn.style.alignItems = 'center';
+            openAllBtn.style.gap = '5px';
+            openAllBtn.textContent = `Buka Semua Bermasalah (${highlightCount})`;
+            openAllBtn.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                Buka Semua Bermasalah (${highlightCount})
+            `;
+        } else {
+            openAllBtn.style.display = 'none';
+        }
+    }
 }
 
 if (highlightToggle) {
     highlightToggle.addEventListener('change', applyDocHighlights);
+}
+
+// Open all highlighted button logic
+const openAllBtn = document.getElementById('open-all-highlighted-btn');
+if (openAllBtn) {
+    openAllBtn.addEventListener('click', () => {
+        const highlightedRows = document.querySelectorAll('tr.highlight-no-doc');
+        if (highlightedRows.length === 0) return;
+        
+        let opened = 0;
+        highlightedRows.forEach((row, idx) => {
+            const checkbox = row.querySelector('.task-checkbox');
+            if (checkbox && checkbox.dataset.id) {
+                // Add a slight delay to prevent browsers from blocking multiple popups
+                setTimeout(() => {
+                    window.open(`inspection.html?id=${checkbox.dataset.id}`, '_blank');
+                }, idx * 200);
+                opened++;
+            }
+        });
+        
+        if (opened > 0) {
+            Swal.fire({
+                title: 'Membuka Tab',
+                text: `${opened} task sedang dibuka di tab baru. Pastikan browser Anda mengizinkan popup.`,
+                icon: 'info',
+                timer: 3000,
+                showConfirmButton: false
+            });
+        }
+    });
 }
 
 // When module changes, save to localStorage, reset cached data and re-apply if toggle is active
