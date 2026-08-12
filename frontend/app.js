@@ -431,7 +431,24 @@ async function applyDocHighlights() {
         if (row.cells.length < 8) return; // Skip error/info rows
         const containerNo = row.cells[3]?.textContent.trim().toUpperCase();
         
-        if (containerNo && upperMissingDocs.includes(containerNo)) {
+        let isMissing = false;
+        
+        if (containerNo) {
+            // 1. Check against external API list
+            if (upperMissingDocs.includes(containerNo)) {
+                isMissing = true;
+            } 
+            // 2. Check for broken double container format (e.g., "ABCD1234567/" or "/ABCD1234567")
+            else if (containerNo.includes('/')) {
+                const parts = containerNo.split('/');
+                // If it contains a slash, both sides should be valid container numbers (usually 10-11 chars)
+                if (parts[0].trim().length < 10 || parts[1].trim().length < 10) {
+                    isMissing = true;
+                }
+            }
+        }
+        
+        if (isMissing) {
             row.classList.add('highlight-no-doc');
             highlightCount++;
         } else {
