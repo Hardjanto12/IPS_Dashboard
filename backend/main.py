@@ -131,7 +131,8 @@ def get_cached_container_no(obj_id: int) -> Optional[str]:
     try:
         with _cache_lock:
             cursor = _get_cache_conn().cursor()
-            cursor.execute("SELECT container_no FROM container_cache WHERE obj_id = ?", (obj_id,))
+            # Hanya gunakan cache jika umurnya kurang dari 2 menit (menghindari data usang/stale cache)
+            cursor.execute("SELECT container_no FROM container_cache WHERE obj_id = ? AND fetched_at >= datetime('now', '-2 minutes')", (obj_id,))
             row = cursor.fetchone()
             if row:
                 return row[0]
@@ -147,7 +148,7 @@ def set_cached_container_no(obj_id: int, container_no: str):
     try:
         with _cache_lock:
             conn = _get_cache_conn()
-            conn.execute("INSERT OR REPLACE INTO container_cache (obj_id, container_no) VALUES (?, ?)", (obj_id, container_no))
+            conn.execute("INSERT OR REPLACE INTO container_cache (obj_id, container_no, fetched_at) VALUES (?, ?, CURRENT_TIMESTAMP)", (obj_id, container_no))
             conn.commit()
     except Exception as e:
         print(f"Error writing cache: {e}")
