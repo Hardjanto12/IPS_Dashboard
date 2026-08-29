@@ -308,14 +308,22 @@ async function manualSubmitTask(taskId) {
 function updateCheckboxListeners() {
     const checkboxes = document.querySelectorAll('.task-checkbox');
     const massBtn = document.getElementById('massSubmitBtn');
+    const openBtn = document.getElementById('massOpenBtn');
     
     function updateMassBtn() {
         const checked = document.querySelectorAll('.task-checkbox:checked').length;
         if (checked > 0) {
-            massBtn.style.display = 'inline-flex';
-            massBtn.textContent = `✅ Auto-Submit Selected (${checked})`;
+            if (massBtn) {
+                massBtn.style.display = 'inline-flex';
+                massBtn.textContent = `✅ Auto-Submit Selected (${checked})`;
+            }
+            if (openBtn) {
+                openBtn.style.display = 'inline-flex';
+                openBtn.textContent = `📂 Open Selected (${checked})`;
+            }
         } else {
-            massBtn.style.display = 'none';
+            if (massBtn) massBtn.style.display = 'none';
+            if (openBtn) openBtn.style.display = 'none';
         }
     }
     
@@ -581,6 +589,37 @@ document.getElementById('massSubmitBtn')?.addEventListener('click', async () => 
     if (selectAllCheckbox) selectAllCheckbox.checked = false;
     
     fetchTasks();
+});
+
+document.getElementById('massOpenBtn')?.addEventListener('click', () => {
+    const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
+    if (checkedBoxes.length === 0) return;
+    
+    let opened = 0;
+    checkedBoxes.forEach(cb => {
+        if (cb.dataset.id) {
+            window.open(`inspection.html?id=${cb.dataset.id}`, '_blank');
+            opened++;
+        }
+    });
+    
+    if (opened > 0) {
+        Swal.fire({
+            title: 'Membuka Tab',
+            text: `Mencoba membuka ${opened} task terpilih. Jika hanya 1 yang berhasil terbuka, lihat pojok kanan atas browser (URL bar), klik peringatan Pop-up Blocker, lalu pilih "Always allow pop-ups" (Selalu izinkan).`,
+            icon: 'warning',
+            timer: 5000,
+            showConfirmButton: true,
+            confirmButtonText: 'Mengerti'
+        });
+    }
+    
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) selectAllCheckbox.checked = false;
+    checkedBoxes.forEach(cb => cb.checked = false);
+    document.getElementById('massOpenBtn').style.display = 'none';
+    const massBtn = document.getElementById('massSubmitBtn');
+    if (massBtn) massBtn.style.display = 'none';
 });
 
 async function openDetails(objId) {
