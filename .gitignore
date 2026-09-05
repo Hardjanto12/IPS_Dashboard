@@ -7,3 +7,4 @@ __pycache__/
 dashboard_cache.db
 backend/build/
 backend/dist/
+frontend/frontend.rar
