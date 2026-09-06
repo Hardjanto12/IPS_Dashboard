@@ -6,17 +6,95 @@ import requests
 import datetime
 import urllib3
 import html
+import hashlib
 import threading
 import asyncio
 import pymssql
+import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import sys
 from typing import Optional
+from pathlib import Path
+
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("IPS_Dashboard")
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# --- Load Configuration ---
+def load_config():
+    """Load configuration from config.json file."""
+    config_paths = [
+        Path(__file__).parent / "config.json",
+        Path(os.path.dirname(sys.executable)) / "config.json" if getattr(sys, 'frozen', False) else None,
+    ]
+    
+    for config_path in config_paths:
+        if config_path and config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                logger.info(f"Loaded config from: {config_path}")
+                return config
+            except Exception as e:
+                logger.error(f"Error loading config from {config_path}: {e}")
+    
+    # Default config if file not found
+    logger.warning("Config file not found, using default configuration")
+    return {
+        "database": {
+            "bpm_db_path": r"C:\Nuctech_Services\ServiceBPM\bpm.db",
+            "bpm_db_path_fallback": r"d:\Source Codes\Nuctech\Server PC\Nuctech_services\ServiceBPM\bpm.db",
+            "bpm_db_timeout": 30
+        },
+        "sql_server": {
+            "server": "192.111.111.80",
+            "database": "idr_rdb",
+            "username": "sa",
+            "password": "Nuctech_50",
+            "timeout": 5,
+            "login_timeout": 5
+        },
+        "soap": {
+            "bpm_url": "http://192.111.111.80:997",
+            "idr_url": "http://192.111.111.80:47361",
+            "timeout": 10,
+            "max_retries": 3,
+            "retry_delay": 1.0,
+            "max_concurrent": 3
+        },
+        "cache": {
+            "ttl_minutes": 30,
+            "max_retries": 3,
+            "retry_delay": 0.1
+        },
+        "mdst": {
+            "base_url": "http://192.111.111.80:6688"
+        },
+        "xraydash": {
+            "url": "http://192.111.111.42:3000/api/filtered",
+            "timeout": 120
+        }
+    }
+
+CONFIG = load_config()
+
+# Server configuration. Keep the defaults so older configuration files remain usable.
+SERVER_CONFIG = CONFIG.get("server", {})
+SERVER_HOST = SERVER_CONFIG.get("host", "0.0.0.0")
+SERVER_PORT = SERVER_CONFIG.get("port", 8000)
+
+if not isinstance(SERVER_PORT, int) or not 1 <= SERVER_PORT <= 65535:
+    raise ValueError("config.json: server.port must be an integer between 1 and 65535")
 
 app = FastAPI(title="Nuctech IPS Dashboard API")
 
@@ -28,65 +106,162 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Configuration ---
-DB_PATH = r"C:\Nuctech_Services\ServiceBPM\bpm.db"
+# --- Configuration from config.json ---
+DB_PATH = CONFIG["database"]["bpm_db_path"]
 # Fallback for local testing
 if not os.path.exists(DB_PATH):
-    DB_PATH = r"d:\Source Codes\Nuctech\Server PC\Nuctech_services\ServiceBPM\bpm.db"
+    DB_PATH = CONFIG["database"]["bpm_db_path_fallback"]
 
-BPM_API_URL = "http://192.111.111.80:997"
-IDR_API_URL = "http://192.111.111.80:47361"
+BPM_API_URL = CONFIG["soap"]["bpm_url"]
+IDR_API_URL = CONFIG["soap"]["idr_url"]
 
-# --- IDR SQL Server Config (same as official Nuctech IPS app) ---
-IDR_SQL_SERVER = "192.111.111.80"
-IDR_SQL_DB = "idr_rdb"
-IDR_SQL_USER = "sa"
-IDR_SQL_PASS = "Nuctech_50"
+# --- IDR SQL Server Config ---
+IDR_SQL_SERVER = CONFIG["sql_server"]["server"]
+IDR_SQL_DB = CONFIG["sql_server"]["database"]
+IDR_SQL_USER = CONFIG["sql_server"]["username"]
+IDR_SQL_PASS = CONFIG["sql_server"]["password"]
 
 def get_container_from_idr_db(container_picno: str) -> Optional[str]:
     """Read container_no directly from SQL Server idr_rdb — same method as official Nuctech IPS.
     This does NOT touch ServiceIDR SOAP at all, so ServiceAssociate is never interrupted."""
     if not container_picno:
         return None
-    try:
-        conn = pymssql.connect(
-            server=IDR_SQL_SERVER,
-            user=IDR_SQL_USER,
-            password=IDR_SQL_PASS,
-            database=IDR_SQL_DB,
-            timeout=5,
-            login_timeout=5
-        )
-        cursor = conn.cursor(as_dict=True)
-        # Query: find the XML info for this PICNO/UNITID
-        cursor.execute("""
-            SELECT TOP 1 s.TYPEVALUE
-            FROM IDR_CHECK_UNIT cu
-            JOIN IDR_CHECK_SIIG cs ON cs.CHECKUNITID = cu.ID
-            JOIN IDR_SIIG s ON s.ID = cs.SIIGID
-            WHERE cu.UNITID = %s AND s.TYPE = 'inputinfo'
-            ORDER BY cu.CHECKINTIME DESC
-        """, (container_picno,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row and row.get("TYPEVALUE"):
-            xml_str = row["TYPEVALUE"]
-            match = re.search(r'<container_no>([^<]*)</container_no>', xml_str)
-            if match and match.group(1).strip():
-                return match.group(1).strip()
-        return None
-    except Exception as e:
-        print(f"IDR SQL Server query error: {e}")
-        return None
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            conn = pymssql.connect(
+                server=IDR_SQL_SERVER,
+                user=IDR_SQL_USER,
+                password=IDR_SQL_PASS,
+                database=IDR_SQL_DB,
+                timeout=CONFIG["sql_server"]["timeout"],
+                login_timeout=CONFIG["sql_server"]["login_timeout"]
+            )
+            cursor = conn.cursor(as_dict=True)
+            # Query: find the XML info for this PICNO/UNITID
+            cursor.execute("""
+                SELECT TOP 1 s.TYPEVALUE
+                FROM IDR_CHECK_UNIT cu
+                JOIN IDR_CHECK_SIIG cs ON cs.CHECKUNITID = cu.ID
+                JOIN IDR_SIIG s ON s.ID = cs.SIIGID
+                WHERE cu.UNITID = %s AND s.TYPE = 'inputinfo'
+                ORDER BY cu.CHECKINTIME DESC
+            """, (container_picno,))
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row and row.get("TYPEVALUE"):
+                xml_str = row["TYPEVALUE"]
+                match = re.search(r'<container_no>([^<]*)</container_no>', xml_str)
+                if match and match.group(1).strip():
+                    return match.group(1).strip()
+            return None
+        except Exception as e:
+            logger.warning(f"IDR SQL Server query error (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                continue
+            return None
 
 def get_db_connection():
     if not os.path.exists(DB_PATH):
         raise HTTPException(status_code=500, detail="Database file not found")
     # Open in read-only mode to prevent blocking ServiceBPM writes
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    # timeout=30: wait up to 30 seconds if ServiceBPM holds write lock
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
+
+def execute_db_query(query: str, params: tuple = (), fetch_one: bool = False, fetch_all: bool = False):
+    """Execute a database query with retry logic for database locked errors."""
+    max_retries = 3
+    for attempt in range(max_retries):
+        conn = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            
+            if fetch_one:
+                result = cursor.fetchone()
+                return result
+            elif fetch_all:
+                result = cursor.fetchall()
+                return result
+            else:
+                return None
+        except Exception as e:
+            if "database is locked" in str(e).lower():
+                logger.warning(f"Database locked (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(0.2 * (attempt + 1))  # Exponential backoff
+                    continue
+            logger.error(f"Database query failed: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+# === Helpers: precondition state guard & validasi SOAP (anti double-submit / anti race) ===
+def get_object_latest_state(obj_id: int) -> Optional[str]:
+    """State BPM terakhir sebuah object (dari bpm.db, read-only)."""
+    try:
+        row = execute_db_query(
+            "SELECT state FROM State WHERE objId = ? ORDER BY seq DESC LIMIT 1",
+            (obj_id,), fetch_one=True)
+        return row["state"] if row else None
+    except Exception as e:
+        logger.error(f"get_object_latest_state failed for obj {obj_id}: {e}")
+        return None
+
+def get_container_state(container_picno: str) -> Optional[str]:
+    """State BPM terakhir object container yang diidentifikasi oleh _id (PICNO)."""
+    try:
+        row = execute_db_query(
+            "SELECT id FROM Object WHERE _id = ? AND lower(model) = 'container' "
+            "ORDER BY createTime DESC LIMIT 1",
+            (container_picno,), fetch_one=True)
+        if not row:
+            return None
+        return get_object_latest_state(row["id"])
+    except Exception as e:
+        logger.error(f"get_container_state failed for {container_picno}: {e}")
+        return None
+
+def assert_submit_allowed(container_picno: str) -> None:
+    """[#3] Precondition: tolak double-submit dan submit saat check sedang berjalan.
+
+    State check workflow ada di object container. Aturan:
+      - state 'check.end'    -> sudah pernah disubmit, TOLAK (anti double-submit)
+      - state 'check.begin'  -> sedang diproses (operator lain / ServiceAssociate), TOLAK
+      - selain itu / state tidak ditemukan -> izinkan (guard longgar demi kompatibilitas).
+    """
+    state = get_container_state(container_picno)
+    if state is None:
+        logger.warning(f"assert_submit_allowed: state BPM container {container_picno} tidak ditemukan; guard dilewati")
+        return
+    st = (state or "").lower()
+    if st == "check.end":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task {container_picno} sudah di-submit (state=check.end). Tidak boleh submit ulang.")
+    if st == "check.begin":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task {container_picno} sedang dalam proses check (state=check.begin) - "
+                   f"mungkin sedang diproses operator lain atau ServiceAssociate. Muat ulang dan coba lagi.")
+    logger.info(f"assert_submit_allowed: state={state} -> diizinkan")
+
+def soap_has_fault(resp: str) -> bool:
+    """Deteksi SOAP Fault di body respons. String kosong dianggap gagal."""
+    if not resp:
+        return True
+    return bool(re.search(r"Faultcode|Faultstring|soap[:]?Fault|:Fault>", resp, re.IGNORECASE))
+
+def fingerprint_text(txt: str) -> str:
+    """Fingerprint isi Siinfo untuk compare-and-swap."""
+    return hashlib.sha1(txt.encode("utf-8", errors="replace")).hexdigest()
 
 # --- SOAP Helpers ---
 # --- SOAP Session & Caching Helpers ---
@@ -111,6 +286,7 @@ def _get_cache_conn():
     if _cache_conn is None:
         _cache_conn = sqlite3.connect(get_cache_db_path(), check_same_thread=False)
         _cache_conn.execute("PRAGMA journal_mode=WAL")
+        _cache_conn.execute("PRAGMA wal_autocheckpoint=100")  # Checkpoint every 100 pages
         _cache_conn.execute("""
             CREATE TABLE IF NOT EXISTS container_cache (
                 obj_id INTEGER PRIMARY KEY,
@@ -128,16 +304,23 @@ except Exception as e:
     print(f"Error initializing cache database: {e}")
 
 def get_cached_container_no(obj_id: int) -> Optional[str]:
-    try:
-        with _cache_lock:
-            cursor = _get_cache_conn().cursor()
-            # Hanya gunakan cache jika umurnya kurang dari 2 menit (menghindari data usang/stale cache)
-            cursor.execute("SELECT container_no FROM container_cache WHERE obj_id = ? AND fetched_at >= datetime('now', '-2 minutes')", (obj_id,))
-            row = cursor.fetchone()
-            if row:
-                return row[0]
-    except Exception as e:
-        print(f"Error reading cache: {e}")
+    max_retries = CONFIG["cache"]["max_retries"]
+    for attempt in range(max_retries):
+        try:
+            with _cache_lock:
+                cursor = _get_cache_conn().cursor()
+                # Use configurable TTL (default 30 minutes) to avoid stale cache
+                cursor.execute(f"SELECT container_no FROM container_cache WHERE obj_id = ? AND fetched_at >= datetime('now', '-{CONFIG['cache']['ttl_minutes']} minutes')", (obj_id,))
+                row = cursor.fetchone()
+                if row:
+                    return row[0]
+        except Exception as e:
+            if "database is locked" in str(e).lower():
+                logger.warning(f"Cache database locked (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(CONFIG["cache"]["retry_delay"] * (attempt + 1))  # Exponential backoff
+                    continue
+            logger.error(f"Error reading cache: {e}")
     return None
 
 def set_cached_container_no(obj_id: int, container_no: str):
@@ -145,26 +328,111 @@ def set_cached_container_no(obj_id: int, container_no: str):
         return
     if container_no == "-":
         container_no = "NOT_FOUND"
-    try:
-        with _cache_lock:
-            conn = _get_cache_conn()
-            conn.execute("INSERT OR REPLACE INTO container_cache (obj_id, container_no, fetched_at) VALUES (?, ?, CURRENT_TIMESTAMP)", (obj_id, container_no))
-            conn.commit()
-    except Exception as e:
-        print(f"Error writing cache: {e}")
+    max_retries = CONFIG["cache"]["max_retries"]
+    for attempt in range(max_retries):
+        try:
+            with _cache_lock:
+                conn = _get_cache_conn()
+                conn.execute("INSERT OR REPLACE INTO container_cache (obj_id, container_no, fetched_at) VALUES (?, ?, CURRENT_TIMESTAMP)", (obj_id, container_no))
+                conn.commit()
+            break
+        except Exception as e:
+            if "database is locked" in str(e).lower():
+                logger.warning(f"Cache database locked (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(CONFIG["cache"]["retry_delay"] * (attempt + 1))  # Exponential backoff
+                    continue
+            logger.error(f"Error writing cache: {e}")
 
-def send_soap(url, payload):
-    headers = {'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': '""'}
-    # Acquire semaphore to limit concurrent SOAP calls (max 3)
-    soap_semaphore.acquire()
-    try:
-        res = soap_session.post(url, data=payload, headers=headers, timeout=5)
-        return res.text
-    except Exception as e:
-        print(f"SOAP Request Error to {url}: {e}")
+# --- SOAP Helpers ---
+# --- SOAP Session & Caching Helpers ---
+soap_session = requests.Session()
+
+# Rate limiting: max 3 concurrent SOAP calls to prevent overloading Nuctech services
+soap_semaphore = threading.Semaphore(CONFIG["soap"]["max_concurrent"])
+
+# Circuit breaker for SOAP calls
+class CircuitBreaker:
+    def __init__(self, failure_threshold=5, recovery_timeout=60):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "closed"  # closed = normal, open = blocked, half_open = testing
+        
+    def record_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = "open"
+            logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
+            
+    def record_success(self):
+        self.failure_count = 0
+        self.state = "closed"
+        
+    def can_execute(self):
+        if self.state == "closed":
+            return True
+        if self.state == "open":
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = "half_open"
+                logger.info("Circuit breaker half-open, testing connection")
+                return True
+            return False
+        return True  # half_open: allow one request
+
+# Create circuit breakers for each SOAP endpoint
+bpm_circuit_breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60)
+idr_circuit_breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60)
+
+def send_soap(url, payload, timeout=None):
+    """Send SOAP request with retry logic and circuit breaker."""
+    if timeout is None:
+        timeout = CONFIG["soap"]["timeout"]
+    
+    max_retries = CONFIG["soap"]["max_retries"]
+    retry_delay = CONFIG["soap"]["retry_delay"]
+    
+    # Select circuit breaker based on URL
+    circuit_breaker = bpm_circuit_breaker if "997" in url else idr_circuit_breaker
+    
+    # Check circuit breaker
+    if not circuit_breaker.can_execute():
+        logger.warning(f"Circuit breaker is open for {url}, skipping request")
         return ""
-    finally:
-        soap_semaphore.release()
+    
+    headers = {'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': '""'}
+    
+    for attempt in range(max_retries):
+        # Acquire semaphore to limit concurrent SOAP calls
+        soap_semaphore.acquire()
+        try:
+            res = soap_session.post(url, data=payload, headers=headers, timeout=timeout)
+            res.raise_for_status()  # Raise exception for HTTP errors
+            circuit_breaker.record_success()
+            return res.text
+        except requests.exceptions.Timeout:
+            logger.warning(f"SOAP timeout to {url} (attempt {attempt + 1}/{max_retries})")
+            circuit_breaker.record_failure()
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                continue
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"SOAP connection error to {url}: {e} (attempt {attempt + 1}/{max_retries})")
+            circuit_breaker.record_failure()
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                continue
+        except Exception as e:
+            logger.error(f"SOAP request error to {url}: {e}")
+            circuit_breaker.record_failure()
+            return ""
+        finally:
+            soap_semaphore.release()
+    
+    logger.error(f"SOAP request failed after {max_retries} attempts to {url}")
+    return ""
 
 def extract_xml_value(xml_str, tag_name):
     match = re.search(f'<{tag_name}>(.*?)</{tag_name}>', xml_str, re.IGNORECASE | re.DOTALL)
@@ -286,14 +554,69 @@ def fetch_ips_realtime_data(container_picno):
         ips_data["images"] = [img.strip() for img in img_matches if img.strip().endswith('.jpg')]
         
         ccr_matches = re.findall(r'<SCANIMG>.*?<TYPE>CCR</TYPE>.*?<PATH>(.*?)</PATH>.*?</SCANIMG>', full_xml, re.IGNORECASE | re.DOTALL)
-        ips_data["ccr_images"] = [f"http://192.111.111.80:6688{path.strip()}" for path in ccr_matches]
+        ips_data["ccr_images"] = [f"{CONFIG['mdst']['base_url']}{path.strip()}" for path in ccr_matches]
         
         cam_matches = re.findall(r'<SCANIMG>.*?<TYPE>Camera</TYPE>.*?<PATH>(.*?)</PATH>.*?</SCANIMG>', full_xml, re.IGNORECASE | re.DOTALL)
-        ips_data["camera_images"] = [f"http://192.111.111.80:6688{path.strip()}" for path in cam_matches]
+        ips_data["camera_images"] = [f"{CONFIG['mdst']['base_url']}{path.strip()}" for path in cam_matches]
         
     return ips_data, manifest_data
 
 # --- API Endpoints ---
+@app.get("/api/health")
+def health_check():
+    """Check if backend and database are accessible."""
+    status = {
+        "backend": "ok", 
+        "bpm_db": "unknown", 
+        "sql_server": "unknown", 
+        "cache_db": "unknown",
+        "circuit_breakers": {
+            "bpm": bpm_circuit_breaker.state,
+            "idr": idr_circuit_breaker.state
+        }
+    }
+    
+    # Check bpm.db
+    try:
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=5)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Object LIMIT 1")
+        result = cursor.fetchone()
+        conn.close()
+        status["bpm_db"] = f"ok (objects: {result[0]})"
+    except Exception as e:
+        status["bpm_db"] = f"error: {str(e)[:100]}"
+    
+    # Check SQL Server
+    try:
+        conn = pymssql.connect(
+            server=IDR_SQL_SERVER,
+            user=IDR_SQL_USER,
+            password=IDR_SQL_PASS,
+            database=IDR_SQL_DB,
+            timeout=CONFIG["sql_server"]["timeout"],
+            login_timeout=CONFIG["sql_server"]["login_timeout"]
+        )
+        conn.close()
+        status["sql_server"] = "ok"
+    except Exception as e:
+        status["sql_server"] = f"error: {str(e)[:100]}"
+    
+    # Check cache database
+    try:
+        with _cache_lock:
+            cursor = _get_cache_conn().cursor()
+            cursor.execute("SELECT COUNT(*) FROM container_cache")
+            result = cursor.fetchone()
+            status["cache_db"] = f"ok (entries: {result[0]})"
+    except Exception as e:
+        status["cache_db"] = f"error: {str(e)[:100]}"
+    
+    # Determine overall status
+    status["overall"] = "healthy" if all(v.startswith("ok") for k, v in status.items() if k not in ["overall", "circuit_breakers"]) else "degraded"
+    
+    return status
+
 @app.post("/api/cache/clear")
 def clear_dashboard_cache():
     try:
@@ -307,6 +630,7 @@ def clear_dashboard_cache():
 
 @app.get("/api/tasks")
 def get_tasks(limit: int = 100, status: str = "all"):
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -355,13 +679,16 @@ def get_tasks(limit: int = 100, status: str = "all"):
                 "container_no": display_container
             })
             
-        conn.close()
         return {"tasks": tasks}
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        if conn:
+            conn.close()
 
 @app.get("/api/tasks/{obj_id}/details")
 def get_task_details(obj_id: int):
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -370,7 +697,6 @@ def get_task_details(obj_id: int):
         cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
         obj = cursor.fetchone()
         if not obj:
-            conn.close()
             raise HTTPException(status_code=404, detail="Task not found")
             
         task_info = {
@@ -424,10 +750,8 @@ def get_task_details(obj_id: int):
                     "create_time": linked["createTime"],
                 }
                 container_picno = linked["container_id"]
-                
-        conn.close()
         
-        # 5. Fetch IPS Data via SOAP
+        # 5. Fetch IPS Data via SOAP (after releasing DB connection)
         ips_data, manifest_data = fetch_ips_realtime_data(container_picno)
         
         return {
@@ -440,8 +764,13 @@ def get_task_details(obj_id: int):
             "container_picno": container_picno
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
 
 @app.get("/api/tasks/{obj_id}/manifest")
 def get_task_manifest(obj_id: int):
@@ -449,7 +778,8 @@ def get_task_manifest(obj_id: int):
     cached_val = get_cached_container_no(obj_id)
     if cached_val:
         return {"container_no": "-" if cached_val == "NOT_FOUND" else cached_val}
-        
+    
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -457,7 +787,6 @@ def get_task_manifest(obj_id: int):
         cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
         obj = cursor.fetchone()
         if not obj:
-            conn.close()
             return {"container_no": "-"}
             
         container_picno = None
@@ -472,13 +801,7 @@ def get_task_manifest(obj_id: int):
             linked = cursor.fetchone()
             if linked:
                 container_picno = linked["container_id"]
-                
-        conn.close()
         
-        if not container_picno:
-            set_cached_container_no(obj_id, "-")
-            return {"container_no": "-"}
-            
         # Read directly from SQL Server idr_rdb (same as official Nuctech IPS)
         # This does NOT use SOAP, so ServiceAssociate is never interrupted
         container_no = get_container_from_idr_db(container_picno)
@@ -493,6 +816,9 @@ def get_task_manifest(obj_id: int):
     except Exception as e:
         print(f"Manifest endpoint error: {e}")
         return {"container_no": "-"}
+    finally:
+        if conn:
+            conn.close()
 
 from pydantic import BaseModel
 import json
@@ -510,17 +836,25 @@ class InspectionData(BaseModel):
 
 @app.post("/api/tasks/{obj_id}/update_and_submit")
 def update_and_submit_task(obj_id: int, data: InspectionData):
-    """Updates the container data via SetSiinfo and then submits it."""
+    """Updates the container data via SetSiinfo then submits it.
+
+    [#1] Setiap langkah SOAP divalidasi; rantai BERHENTI saat satu langkah gagal
+         (tidak lagi fire-and-forget), dan respons memuat status per-langkah.
+    [#3] Ada precondition state (tolak double-submit / check yang sedang berjalan).
+    [#4] Edit Siinfo memakai compare-and-swap: jika data berubah sejak dibaca
+         (kemungkinan ditulis ServiceAssociate/modul device, mis. foto CCR),
+         penyimpanan DITOLAK dan pengguna diminta memuat ulang.
+    """
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
         obj = cursor.fetchone()
         if not obj:
-            conn.close()
             raise HTTPException(status_code=404, detail="Task not found")
-            
+
         container_picno = None
         if obj["model"].lower() == 'container':
             container_picno = obj["_id"]
@@ -533,12 +867,16 @@ def update_and_submit_task(obj_id: int, data: InspectionData):
             linked = cursor.fetchone()
             if linked:
                 container_picno = linked["container_id"]
-                
-        conn.close()
+
         if not container_picno:
             raise HTTPException(status_code=400, detail="No container PICNO linked to this task.")
-            
-        # 1. Fetch current Siinfo
+
+        # [#3] Precondition guard
+        assert_submit_allowed(container_picno)
+
+        steps = {}
+
+        # 1. GetCheckUnitId
         req_unit = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
         <SOAP-ENV:Body><Idr:GetCheckUnitId><wstrCheckUnit>{container_picno}</wstrCheckUnit></Idr:GetCheckUnitId></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
@@ -546,99 +884,117 @@ def update_and_submit_task(obj_id: int, data: InspectionData):
         check_unit_id = extract_xml_value(res_unit, "wstrCheckUnitId")
         if not check_unit_id:
             raise HTTPException(status_code=400, detail="Container is not active in IDR (maybe already submitted?)")
+        steps["get_checkunit"] = "ok"
 
+        # 2. GetSiinfo -> baseline untuk compare-and-swap
         req_siinfo = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
         <SOAP-ENV:Body><Idr:GetSiinfo><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId></Idr:GetSiinfo></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
         res_siinfo = send_soap(IDR_API_URL, req_siinfo)
-        
-        # Extract <Siinfo> block
         siinfo_match = re.search(r'<Siinfo>(.*?)</Siinfo>', res_siinfo, re.IGNORECASE | re.DOTALL)
-        if not siinfo_match:
-            raise HTTPException(status_code=500, detail="Failed to fetch Siinfo from IDR")
-            
+        if not siinfo_match or soap_has_fault(res_siinfo):
+            raise HTTPException(status_code=502, detail="Failed to fetch Siinfo from IDR")
         siinfo_content = siinfo_match.group(1)
-        
-        # 2. Modify inputinfo XML inside Siinfo
-        # The inputinfo is HTML encoded inside <m-vTYPEVALUE> where <m-vTYPE> is inputinfo.
-        # But wait! <m-vTYPEVALUE> tags are ordered corresponding to <m-vTYPE>.
-        # We can just decode the whole Siinfo, replace what we need, and re-encode.
+        baseline_fp = fingerprint_text(siinfo_content)
+        steps["get_siinfo"] = "ok"
+
+        # 3. Modifikasi field (container_no & g_v_no) pada salinan Siinfo
         siinfo_un = html.unescape(siinfo_content)
-        
-        # Replace container_no (escape backslashes for re.sub replacement)
+
         safe_container_no = data.container_no.replace('\\', '\\\\')
         siinfo_un = re.sub(r'<container_no>.*?</container_no>', f'<container_no>{safe_container_no}</container_no>', siinfo_un, count=1)
-        
-        # Replace g_v_no (Front Vehicle)
+
         safe_front_vehicle = data.front_vehicle.replace('\\', '\\\\')
         if '<g_v_no>' in siinfo_un:
             siinfo_un = re.sub(r'<g_v_no>.*?</g_v_no>', f'<g_v_no>{safe_front_vehicle}</g_v_no>', siinfo_un, count=1)
         else:
-            # If not present, try to inject it into <container>
             siinfo_un = siinfo_un.replace('</container>', f'<g_v_no>{data.front_vehicle}</g_v_no></container>')
-            
-        # You can add more replacements here (rear_vehicle, driver, etc.) if their tags are known.
-        
-        # Re-encode only the XML parts inside m-vTYPEVALUE
-        # Actually, if we just send the whole thing wrapped in <Siinfo>, we MUST re-encode the values inside <m-vTYPEVALUE>
-        # A quick hack: IDR usually accepts it even if we just encode < and > as &lt; and &gt;
-        
-        # Let's extract all m-vTYPEVALUEs and encode their inner content
+
         def encode_typevalue(match):
             inner = match.group(1)
-            # Only encode if it contains actual tags
             if '<' in inner:
                 return f"<m-vTYPEVALUE>{html.escape(inner)}</m-vTYPEVALUE>"
             return match.group(0)
-            
+
         siinfo_encoded = re.sub(r'<m-vTYPEVALUE>(.*?)</m-vTYPEVALUE>', encode_typevalue, siinfo_un, flags=re.DOTALL)
-        
-        # 3. Send SetSiinfo
+
+        # [#4] Compare-and-swap: verifikasi ulang sebelum menulis
+        res_check = send_soap(IDR_API_URL, req_siinfo)
+        check_match = re.search(r'<Siinfo>(.*?)</Siinfo>', res_check, re.IGNORECASE | re.DOTALL)
+        if not check_match or soap_has_fault(res_check):
+            raise HTTPException(status_code=502, detail="Gagal verifikasi ulang Siinfo sebelum menyimpan (CAS). Coba lagi.")
+        if fingerprint_text(check_match.group(1)) != baseline_fp:
+            raise HTTPException(
+                status_code=409,
+                detail="Data task BERUBAH sejak halaman dibuka (kemungkinan ditulis ServiceAssociate/modul device, "
+                       "misalnya foto CCR). Penyimpanan DIBATALKAN agar tidak menimpa data. Muat ulang dan ulangi edit."
+            )
+
+        # 4. SetSiinfo (divalidasi; berhenti jika gagal)
         req_set = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
         <SOAP-ENV:Body><Idr:SetSiinfo><Siinfo>{siinfo_encoded}</Siinfo></Idr:SetSiinfo></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-        
         res_set = send_soap(IDR_API_URL, req_set)
-        
-        # 4. Now perform the conclusion workflow
+        if soap_has_fault(res_set):
+            raise HTTPException(status_code=502, detail="SetSiinfo gagal di IDR. Data TIDAK disimpan.")
+        steps["set_siinfo"] = "ok"
+
+        # 5. Alur conclusion
         conclusion = data.conclusion if data.conclusion else "No Suspect"
-        
-        # setProperty check_result
+
+        # 5a. setProperty check_result (BPM)
         req_prop1 = f"""<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
 <SOAP-ENV:Body SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
 <H986BPM:setProperty><model>container</model><id>{container_picno}</id><name>check_result</name><value>{conclusion}</value></H986BPM:setProperty>
 </SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-        send_soap(BPM_API_URL, req_prop1)
-        
-        # CommitConclusion (using conclusioninfo format to fill Inspector/Conclusion fields)
+        res_prop1 = send_soap(BPM_API_URL, req_prop1)
+        if soap_has_fault(res_prop1):
+            raise HTTPException(status_code=502, detail="BPM setProperty check_result gagal. SetSiinfo sudah tersimpan.")
+        steps["set_property"] = "ok"
+
+        # 5b. CommitConclusion (IDR)
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         contents_escaped = html.escape(data.contents) if data.contents else ""
         req_commit = f"""<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
 <SOAP-ENV:Body><Idr:CommitConclusion><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId><conclusioninfo><m-strID></m-strID><m-strCHECKUNITID>{container_picno}</m-strCHECKUNITID><m-strOPERATORID>Ips1</m-strOPERATORID><m-strAPPID>check</m-strAPPID><m-strTYPE>{conclusion}</m-strTYPE><m-strCONTENT>&lt;CONTENT&gt;{contents_escaped}&lt;/CONTENT&gt;</m-strCONTENT><m-strOPERATIONTIME>{now_str}</m-strOPERATIONTIME></conclusioninfo></Idr:CommitConclusion></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-        send_soap(IDR_API_URL, req_commit)
-        
-        # setState check.end
+        res_commit = send_soap(IDR_API_URL, req_commit)
+        if soap_has_fault(res_commit):
+            raise HTTPException(status_code=502, detail="IDR CommitConclusion gagal. SetSiinfo sudah tersimpan.")
+        steps["commit_conclusion"] = "ok"
+
+        # 5c. setState check.end (BPM) - finalisasi
         req_state2 = f"""<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
 <SOAP-ENV:Body SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
 <H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>end</substate><stateProps><item><name>operator</name><value>Ips1</value></item></stateProps></H986BPM:setState>
 </SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-        send_soap(BPM_API_URL, req_state2)
-        
-        return {"status": "success", "message": f"Task updated and submitted as {conclusion}"}
+        res_state2 = send_soap(BPM_API_URL, req_state2)
+        if soap_has_fault(res_state2):
+            raise HTTPException(status_code=502, detail="BPM setState check.end gagal - conclusion sudah tercatat di IDR.")
+        steps["set_state_end"] = "ok"
 
+        return {"status": "success", "message": f"Task updated and submitted as {conclusion}", "steps": steps}
+
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception(f"update_and_submit_task error for obj {obj_id}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
 
 @app.post("/api/tasks/{obj_id}/submit")
 def submit_task(obj_id: int):
     """Auto Submit a task as 'No Suspect' via Nuctech SOAP APIs."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
+    conn = None
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
         cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
         obj = cursor.fetchone()
         if not obj:
@@ -658,6 +1014,9 @@ def submit_task(obj_id: int):
                 
         if not container_picno:
             raise HTTPException(status_code=400, detail="No container linked to this task.")
+
+        # [#3] Precondition guard: tolak double-submit / submit saat check sedang berjalan
+        assert_submit_allowed(container_picno)
             
         # Get CheckUnitId
         req_unit = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -674,35 +1033,70 @@ def submit_task(obj_id: int):
         req_begin = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
         <SOAP-ENV:Body><H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>begin</substate><stateProps><item><name>operator</name><value>Ips1</value></item></stateProps></H986BPM:setState></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-        send_soap(BPM_API_URL, req_begin)
+        res_begin = send_soap(BPM_API_URL, req_begin)
+        
+        # Check if check.begin was successful
+        if not res_begin:
+            logger.error(f"BPM check.begin failed for container {container_picno}")
+            raise HTTPException(status_code=503, detail="BPM Service unavailable. Cannot start check workflow.")
+        
+        # Check for error in response
+        if "Fault" in res_begin or "Error" in res_begin:
+            logger.error(f"BPM check.begin returned error for container {container_picno}: {res_begin[:200]}")
+            raise HTTPException(status_code=500, detail="BPM Service returned error during check.begin.")
         
         # 2. setProperty check_result = No Suspect (BPM)
         req_prop = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
         <SOAP-ENV:Body><H986BPM:setProperty><model>container</model><id>{container_picno}</id><name>check_result</name><value>No Suspect</value></H986BPM:setProperty></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-        send_soap(BPM_API_URL, req_prop)
+        res_prop = send_soap(BPM_API_URL, req_prop)
+        
+        # Check if setProperty was successful (fail loudly - jangan lanjut diam-diam)
+        if soap_has_fault(res_prop):
+            logger.error(f"BPM setProperty failed for container {container_picno}")
+            raise HTTPException(status_code=502, detail="BPM setProperty check_result gagal. Submit dibatalkan.")
         
         # 3. CommitConclusion (IDR)
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         req_commit = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:Idr="urn:NuctechIdrService">
         <SOAP-ENV:Body><Idr:CommitConclusion><wstrCheckUnitId>{check_unit_id}</wstrCheckUnitId><conclusioninfo><m-strID></m-strID><m-strCHECKUNITID>{container_picno}</m-strCHECKUNITID><m-strOPERATORID>Ips1</m-strOPERATORID><m-strAPPID>check</m-strAPPID><m-strTYPE>No Suspect</m-strTYPE><m-strCONTENT>&lt;CONTENT&gt;&lt;CONTENT&gt;&lt;/CONTENT&gt;&lt;/CONTENT&gt;</m-strCONTENT><m-strOPERATIONTIME>{now_str}</m-strOPERATIONTIME></conclusioninfo></Idr:CommitConclusion></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-        send_soap(IDR_API_URL, req_commit)
+        res_commit = send_soap(IDR_API_URL, req_commit)
+        
+        # Check if CommitConclusion was successful (fail loudly)
+        if soap_has_fault(res_commit):
+            logger.error(f"IDR CommitConclusion failed for container {container_picno}")
+            raise HTTPException(status_code=502, detail="IDR CommitConclusion gagal - conclusion belum tercatat.")
         
         # 4. setState check.end (BPM)
         req_end = f"""<?xml version="1.0" encoding="UTF-8"?>
         <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:H986BPM="http://www.nuctech.com/BPMServer/">
         <SOAP-ENV:Body><H986BPM:setState><model>container</model><id>{container_picno}</id><stage>check</stage><substate>end</substate><stateProps><item><name>operator</name><value>Ips1</value></item></stateProps></H986BPM:setState></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-        send_soap(BPM_API_URL, req_end)
+        res_end = send_soap(BPM_API_URL, req_end)
+        
+        # Check if check.end was successful
+        if not res_end:
+            logger.error(f"BPM check.end failed for container {container_picno}")
+            raise HTTPException(status_code=503, detail="BPM Service unavailable. Cannot complete check workflow.")
+        
+        # Check for error in response
+        if "Fault" in res_end or "Error" in res_end:
+            logger.error(f"BPM check.end returned error for container {container_picno}: {res_end[:200]}")
+            raise HTTPException(status_code=500, detail="BPM Service returned error during check.end.")
         
         return {"status": "success", "message": f"Successfully submitted {container_picno} as No Suspect."}
         
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 @app.get("/api/xraydash/no-docs")
 def get_xraydash_no_docs(date_range: str = None, module: str = "import"):
     try:
-        url = "http://192.111.111.42:3000/api/filtered"
+        url = CONFIG["xraydash"]["url"]
         action = "get_export" if module == "export" else "get_import"
         payload = {
             "module": module,
@@ -714,8 +1108,8 @@ def get_xraydash_no_docs(date_range: str = None, module: str = "import"):
             payload["date_range"] = date_range
         headers = {'Content-Type': 'application/json'}
         
-        # Use a higher timeout because xraydashretriever filtered scan can take ~40 seconds
-        res = requests.post(url, json=payload, headers=headers, timeout=120)
+        # Use configurable timeout (default 120s) because xraydashretriever filtered scan can take ~40 seconds
+        res = requests.post(url, json=payload, headers=headers, timeout=CONFIG["xraydash"]["timeout"])
         res.raise_for_status()
         data = res.json()
         
@@ -783,4 +1177,4 @@ if __name__ == "__main__":
     if sys.stderr is None:
         sys.stderr = DummyStream()
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None)
+    uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT, log_config=None)

@@ -7,13 +7,16 @@ if (!taskId) {
     });
 }
 
+// Auto-detect API base URL from current page location
+const API_BASE = window.location.origin;
+
 document.getElementById('task-id-badge').textContent = `Memuat Task #${taskId}...`;
 
 let allImages = [];
 
 async function loadData() {
     try {
-        const res = await fetch(`http://192.111.111.80:8000/api/tasks/${taskId}/details`);
+        const res = await fetch(`${API_BASE}/api/tasks/${taskId}/details`);
         const data = await res.json();
         
         if (data.error) throw new Error(data.error);
@@ -171,7 +174,7 @@ async function submitInspection() {
     btn.disabled = true;
     
     try {
-        const res = await fetch(`http://192.111.111.80:8000/api/tasks/${taskId}/update_and_submit`, {
+        const res = await fetch(`${API_BASE}/api/tasks/${taskId}/update_and_submit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)

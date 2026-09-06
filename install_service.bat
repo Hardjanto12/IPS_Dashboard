@@ -24,6 +24,8 @@ set SCRIPT_DIR=%~dp0
 set NSSM_PATH=%SCRIPT_DIR%nssm.exe
 set EXE_PATH=%SCRIPT_DIR%backend\dist\BPM_API_Server.exe
 set APP_DIR=%SCRIPT_DIR%backend\dist
+set CONFIG_SOURCE=%SCRIPT_DIR%backend\config.json
+set CONFIG_DEST=%APP_DIR%\config.json
 
 echo.
 echo ============================================
@@ -74,13 +76,18 @@ if %errorLevel% neq 0 (
 echo [2/4] Mengatur working directory...
 "%NSSM_PATH%" set %SERVICE_NAME% AppDirectory "%APP_DIR%"
 
+:: Copy the default config for a new installation without overwriting a customized config.
+if not exist "%CONFIG_DEST%" (
+    if exist "%CONFIG_SOURCE%" copy /Y "%CONFIG_SOURCE%" "%CONFIG_DEST%" >nul
+)
+
 :: Configure service to start automatically
 echo [3/4] Mengatur startup otomatis...
 "%NSSM_PATH%" set %SERVICE_NAME% Start SERVICE_AUTO_START
 
 :: Configure service description
 "%NSSM_PATH%" set %SERVICE_NAME% DisplayName "IPS Dashboard Server"
-"%NSSM_PATH%" set %SERVICE_NAME% Description "Nuctech IPS Dashboard - Backend API and Frontend Web Server (Port 8000)"
+"%NSSM_PATH%" set %SERVICE_NAME% Description "Nuctech IPS Dashboard - Backend API and Frontend Web Server"
 
 :: Configure restart on failure
 "%NSSM_PATH%" set %SERVICE_NAME% AppExit Default Restart
@@ -99,12 +106,12 @@ if %errorLevel% neq 0 (
     echo ============================================
     echo   Service Name  : %SERVICE_NAME%
     echo   Executable    : %EXE_PATH%
-    echo   Port          : 8000
+    echo   Port          : sesuai backend\dist\config.json
     echo   Startup       : Automatic
     echo   Auto-Restart  : Ya (jika crash, restart setelah 5 detik)
     echo.
     echo   Akses dashboard di browser:
-    echo   http://localhost:8000/dashboard
+    echo   http://localhost:^<port-dari-config^>/dashboard
     echo.
     echo   Kelola service di: services.msc
     echo ============================================

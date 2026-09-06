@@ -3,7 +3,7 @@ from tkinter import scrolledtext
 import threading
 import sys
 import uvicorn
-from main import app  # Import the FastAPI app
+from main import app, SERVER_HOST, SERVER_PORT  # Import the FastAPI app and server settings
 
 class RedirectText:
     def __init__(self, text_ctrl):
@@ -61,7 +61,7 @@ class ServerApp:
         self.root.after(100, self.start_server)
 
     def run_uvicorn(self):
-        config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_config=None)
+        config = uvicorn.Config(app, host=SERVER_HOST, port=SERVER_PORT, log_config=None)
         self.server = uvicorn.Server(config)
         self.server.run()
         
@@ -72,7 +72,7 @@ class ServerApp:
             self.btn_start.config(state=tk.DISABLED)
             self.btn_stop.config(state=tk.NORMAL)
             
-            print("Starting server on http://0.0.0.0:8000 ...")
+            print(f"Starting server on http://{SERVER_HOST}:{SERVER_PORT} ...")
             
             self.server_thread = threading.Thread(target=self.run_uvicorn, daemon=True)
             self.server_thread.start()

@@ -76,8 +76,18 @@ Cara termudah untuk menginstal service adalah menggunakan script otomatis yang s
    - Langsung menjalankan service.
 
 ### Setelah berhasil:
-- Dashboard dapat diakses di browser: **`http://localhost:8000/dashboard`**
-- Atau dari komputer lain dalam jaringan: **`http://<IP_SERVER>:8000/dashboard`**
+- Dashboard dapat diakses di browser: **`http://localhost:<port>/dashboard`**
+- Atau dari komputer lain dalam jaringan: **`http://<IP_SERVER>:<port>/dashboard`**
+
+  Nilai `<port>` diatur melalui `backend/config.json` saat menjalankan dari source,
+  atau `backend/dist/config.json` untuk aplikasi hasil build. Contoh:
+
+  ```json
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8000
+  }
+  ```
 
 ---
 
@@ -120,5 +130,5 @@ nssm remove IPS_Dashboard confirm
 |---------|--------|
 | Dashboard tidak bisa diakses (`Not Found`) | Pastikan folder `frontend` berada satu tingkat di atas lokasi file `.exe` |
 | Service gagal start | Jalankan `BPM_API_Server_Visible.exe` secara manual untuk melihat error di console |
-| Port 8000 sudah dipakai | Hentikan proses lain yang menggunakan port 8000, atau ubah port di `main.py` |
+| Port sudah dipakai | Hentikan proses lain yang menggunakan port tersebut, atau ubah `server.port` di `config.json` lalu jalankan ulang aplikasi. |
 | Script `.bat` minta Administrator | Klik kanan file `.bat` → **Run as administrator** |

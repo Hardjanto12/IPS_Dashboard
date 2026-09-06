@@ -1,0 +1,39 @@
+{
+    "server": {
+        "host": "0.0.0.0",
+        "port": 8000
+    },
+    "database": {
+        "bpm_db_path": "C:\\Nuctech_Services\\ServiceBPM\\bpm.db",
+        "bpm_db_path_fallback": "d:\\Source Codes\\Nuctech\\Server PC\\Nuctech_services\\ServiceBPM\\bpm.db",
+        "bpm_db_timeout": 30
+    },
+    "sql_server": {
+        "server": "192.111.111.80",
+        "database": "idr_rdb",
+        "username": "sa",
+        "password": "Nuctech_50",
+        "timeout": 5,
+        "login_timeout": 5
+    },
+    "soap": {
+        "bpm_url": "http://192.111.111.80:997",
+        "idr_url": "http://192.111.111.80:47361",
+        "timeout": 10,
+        "max_retries": 3,
+        "retry_delay": 1.0,
+        "max_concurrent": 3
+    },
+    "cache": {
+        "ttl_minutes": 30,
+        "max_retries": 3,
+        "retry_delay": 0.1
+    },
+    "mdst": {
+        "base_url": "http://192.111.111.80:6688"
+    },
+    "xraydash": {
+        "url": "http://192.111.111.42:3000/api/filtered",
+        "timeout": 120
+    }
+}

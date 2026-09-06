@@ -1,4 +1,7 @@
-const API_URL = 'http://192.111.111.80:8000/api/tasks';
+// Auto-detect API base URL from current page location
+const API_BASE = window.location.origin;
+const API_URL = `${API_BASE}/api/tasks`;
+const HEALTH_URL = `${API_BASE}/api/health`;
 const refreshBtn = document.getElementById('refresh-btn');
 const tbody = document.getElementById('task-body');
 const limitFilter = document.getElementById('limit-filter');
@@ -26,6 +29,30 @@ function getStateClass(state) {
     if (state.includes('ready')) return 'state-ready';
     if (state.includes('end')) return 'state-end';
     return 'state-default';
+}
+
+// Health Check Function
+async function checkHealth() {
+    try {
+        const response = await fetch(HEALTH_URL);
+        const data = await response.json();
+        const healthIndicator = document.getElementById('health-indicator');
+        if (healthIndicator) {
+            if (data.overall === 'healthy') {
+                healthIndicator.style.backgroundColor = '#10B981';
+                healthIndicator.title = 'System Healthy';
+            } else {
+                healthIndicator.style.backgroundColor = '#F59E0B';
+                healthIndicator.title = `System Degraded: ${JSON.stringify(data)}`;
+            }
+        }
+    } catch (error) {
+        const healthIndicator = document.getElementById('health-indicator');
+        if (healthIndicator) {
+            healthIndicator.style.backgroundColor = '#EF4444';
+            healthIndicator.title = 'Backend Unreachable';
+        }
+    }
 }
 
 let isFetching = false;
@@ -112,7 +139,7 @@ async function fetchTasks() {
             const batchPromises = batch.map(async (task) => {
                 window.attemptedFetches.add(task.id);
                 try {
-                    const res = await fetch(`http://192.111.111.80:8000/api/tasks/${task.id}/manifest`);
+                    const res = await fetch(`${API_BASE}/api/tasks/${task.id}/manifest`);
                     if (res.ok) {
                         const mData = await res.json();
                         const cell = document.getElementById(`container-cell-${task.id}`);
@@ -138,7 +165,7 @@ async function fetchTasks() {
 
     } catch (error) {
         console.error('Failed to fetch tasks:', error);
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: #ff3366;">Koneksi ke backend gagal. Pastikan server backend berjalan di port 8000.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: #ff3366;">Koneksi ke backend gagal. Pastikan server backend sedang berjalan.</td></tr>`;
     } finally {
         setTimeout(() => {
             refreshBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.21l-5.6 5.6"/></svg> Refresh`;
@@ -151,7 +178,7 @@ async function fetchTasks() {
 refreshBtn.addEventListener('click', async () => {
     refreshBtn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin:0 5px 0 0;"></div> Refreshing...`;
     try {
-        await fetch('http://192.111.111.80:8000/api/cache/clear', { method: 'POST' });
+        await fetch(`${API_BASE}/api/cache/clear`, { method: 'POST' });
     } catch(e) {
         console.error("Failed to clear cache:", e);
     }
@@ -251,11 +278,15 @@ autoRefreshToggle.addEventListener('change', (e) => {
 // Initial fetch
 document.addEventListener('DOMContentLoaded', () => {
     fetchTasks();
+    checkHealth();  // Check system health on page load
     
     // Auto-polling setup
     if (autoRefreshToggle.checked) {
         pollingInterval = setInterval(fetchTasks, 15000);
     }
+    
+    // Check health every 30 seconds
+    setInterval(checkHealth, 30000);
 });
 
 // ===== DETAIL MODAL =====
@@ -290,7 +321,7 @@ async function manualSubmitTask(taskId) {
     if (!result.isConfirmed) return;
 
     try {
-        const response = await fetch(`http://192.111.111.80:8000/api/tasks/${taskId}/submit`, { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/tasks/${taskId}/submit`, { method: 'POST' });
         const data = await response.json();
         if (response.ok) {
             Swal.fire('Berhasil!', data.message || 'Task berhasil disubmit.', 'success');
@@ -575,7 +606,7 @@ document.getElementById('massSubmitBtn')?.addEventListener('click', async () => 
     let success = 0, fail = 0;
     for (const cb of checkedBoxes) {
         try {
-            const res = await fetch(`http://192.111.111.80:8000/api/tasks/${cb.dataset.id}/submit`, { method: 'POST' });
+            const res = await fetch(`${API_BASE}/api/tasks/${cb.dataset.id}/submit`, { method: 'POST' });
             if (res.ok) success++;
             else fail++;
         } catch(e) {
@@ -628,7 +659,7 @@ async function openDetails(objId) {
     modalBody.innerHTML = '<div class="spinner"></div><p style="text-align:center; color: var(--text-secondary);">Mengambil data dari server...</p>';
     
     try {
-        const response = await fetch(`http://192.111.111.80:8000/api/tasks/${objId}/details`);
+        const response = await fetch(`${API_BASE}/api/tasks/${objId}/details`);
         const data = await response.json();
         
         if (data.error) {
