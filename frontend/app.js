@@ -103,8 +103,25 @@ async function fetchTasks() {
             const result = task.properties?.result;
             const showNo = task.container_no && task.container_no !== '-' ? task.container_no : '...';
             const colorStyle = showNo === '...' ? 'color: var(--text-muted);' : '';
-            const thumbUrl = task.thumbnail_path;
-            const thumbHtml = thumbUrl ? `<img src="${thumbUrl}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${thumbUrl.replace('_icon', '')}', '_blank')" onerror="this.style.display='none'">` : '-';
+            let thumbHtml = '<span class="fallback-dash">-</span>';
+            if (task.thumbnail_path && task.thumbnail_path !== "NOT_FOUND") {
+                thumbHtml = `<img src="${task.thumbnail_path}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${task.thumbnail_path.replace('_icon', '')}', '_blank')" onerror="this.style.display='none'; this.nextElementSibling ? this.nextElementSibling.style.display='inline' : null"><span class="fallback-dash" style="display:none">-</span>`;
+            } else if (task.model === 'container' && task.task_id.startsWith('62001FS05')) {
+                const tId = task.task_id;
+                const year = tId.substring(9, 13);
+                const md = tId.substring(13, 17);
+                const seq = parseInt(tId.substring(17), 10);
+                
+                let imgTags = '';
+                for (let offset = 0; offset <= 15; offset++) {
+                    const folderSeq = String(seq + offset).padStart(4, '0');
+                    const imgUrl = `http://192.111.111.80:6688/62001FS05/${year}/${md}/${folderSeq}/${tId}_icon.jpg`;
+                    const fullImgUrl = `http://192.111.111.80:6688/62001FS05/${year}/${md}/${folderSeq}/${tId}.jpg`;
+                    
+                    imgTags += `<img src="${imgUrl}" data-full="${fullImgUrl}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px; display: none;" onload="this.style.display='inline'; Array.from(this.parentElement.children).forEach(c => { if(c !== this) c.style.display='none'; });" onclick="window.open(this.getAttribute('data-full'), '_blank')" onerror="this.remove()">`;
+                }
+                thumbHtml = imgTags + '<span class="fallback-dash">-</span>';
+            }
             
             tr.innerHTML = `
                 <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
@@ -153,7 +170,7 @@ async function fetchTasks() {
                         }
                         if (mData.thumbnail_path) {
                             const tCell = document.getElementById(`thumb-cell-${task.id}`);
-                            if (tCell && tCell.textContent === '-') {
+                            if (tCell && tCell.querySelector('.fallback-dash') && tCell.querySelector('.fallback-dash').style.display !== 'none') {
                                 tCell.innerHTML = `<img src="${mData.thumbnail_path}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${mData.thumbnail_path.replace('_icon', '')}', '_blank')" onerror="this.style.display='none'">`;
                             }
                         }
@@ -823,6 +840,8 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
+
 
 
 
