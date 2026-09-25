@@ -105,7 +105,7 @@ async function fetchTasks() {
             const colorStyle = showNo === '...' ? 'color: var(--text-muted);' : '';
             let thumbHtml = '<span class="fallback-dash">-</span>';
             if (task.thumbnail_path && task.thumbnail_path !== "NOT_FOUND") {
-                thumbHtml = `<img src="${task.thumbnail_path}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${task.thumbnail_path.replace('_gray', '')}', '_blank')" onerror="this.style.display='none'; this.nextElementSibling ? this.nextElementSibling.style.display='inline' : null"><span class="fallback-dash" style="display:none">-</span>`;
+                thumbHtml = `<img src="${task.thumbnail_path}" style="height: 30px; border-radius: 2px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${task.thumbnail_path.replace('_gray', '')}', '_blank')" onerror="this.style.display='none'; this.nextElementSibling ? this.nextElementSibling.style.display='inline' : null"><span class="fallback-dash" style="display:none">-</span>`;
             } else if (task.model === 'container' && task.task_id.startsWith('62001FS05')) {
                 const tId = task.task_id;
                 const year = tId.substring(9, 13);
@@ -118,7 +118,7 @@ async function fetchTasks() {
                     const imgUrl = `http://192.111.111.80:6688/62001FS05/${year}/${md}/${folderSeq}/${tId}_gray.jpg`;
                     const fullImgUrl = `http://192.111.111.80:6688/62001FS05/${year}/${md}/${folderSeq}/${tId}.jpg`;
                     
-                    imgTags += `<img src="${imgUrl}" data-full="${fullImgUrl}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px; display: none;" onload="this.style.display='inline'; Array.from(this.parentElement.children).forEach(c => { if(c !== this) c.style.display='none'; });" onclick="window.open(this.getAttribute('data-full'), '_blank')" onerror="this.remove()">`;
+                    imgTags += `<img src="${imgUrl}" data-full="${fullImgUrl}" style="height: 30px; border-radius: 2px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px; display: none;" onload="this.style.display='inline'; Array.from(this.parentElement.children).forEach(c => { if(c !== this) c.style.display='none'; });" onclick="window.open(this.getAttribute('data-full'), '_blank')" onerror="this.remove()">`;
                 }
                 thumbHtml = imgTags + '<span class="fallback-dash">-</span>';
             }
@@ -171,7 +171,7 @@ async function fetchTasks() {
                         if (mData.thumbnail_path) {
                             const tCell = document.getElementById(`thumb-cell-${task.id}`);
                             if (tCell && tCell.querySelector('.fallback-dash') && tCell.querySelector('.fallback-dash').style.display !== 'none') {
-                                tCell.innerHTML = `<img src="${mData.thumbnail_path}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${mData.thumbnail_path.replace('_gray', '')}', '_blank')" onerror="this.style.display='none'">`;
+                                tCell.innerHTML = `<img src="${mData.thumbnail_path}" style="height: 30px; border-radius: 2px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${mData.thumbnail_path.replace('_gray', '')}', '_blank')" onerror="this.style.display='none'">`;
                             }
                         }
                         // Update the container_no on the task object in memory
@@ -840,6 +840,7 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
 
 
 
