@@ -127,10 +127,11 @@ async function fetchTasks() {
                 let imgTags = '';
                 for (let offset = 0; offset <= 15; offset++) {
                     const folderSeq = String(seq + offset).padStart(4, '0');
-                    const imgUrl = `${GLOBAL_CONFIG.mdst_base_url}/${scannerId}/${year}/${md}/${folderSeq}/${tId}_gray.jpg`;
+                    const imgUrlGray = `${GLOBAL_CONFIG.mdst_base_url}/${scannerId}/${year}/${md}/${folderSeq}/${tId}_gray.jpg`;
+                    const imgUrlIcon = `${GLOBAL_CONFIG.mdst_base_url}/${scannerId}/${year}/${md}/${folderSeq}/${tId}_icon.jpg`;
                     const fullImgUrl = `${GLOBAL_CONFIG.mdst_base_url}/${scannerId}/${year}/${md}/${folderSeq}/${tId}.jpg`;
                     
-                    imgTags += `<img src="${imgUrl}" data-full="${fullImgUrl}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px; display: none;" onload="this.style.display='inline'; Array.from(this.parentElement.children).forEach(c => { if(c !== this) c.style.display='none'; });" onclick="window.open(this.getAttribute('data-full'), '_blank')" onerror="this.remove()">`;
+                    imgTags += `<img src="${imgUrlGray}" data-fallback="${imgUrlIcon}" data-full="${fullImgUrl}" style="height: 30px; border-radius: 2px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px; display: none;" onload="this.style.display='inline'; Array.from(this.parentElement.children).forEach(c => { if(c !== this && (c.tagName === 'IMG' || c.className === 'fallback-dash')) c.style.display='none'; });" onclick="window.open(this.getAttribute('data-full'), '_blank')" onerror="if(this.src.includes('_gray.jpg')) { this.src = this.getAttribute('data-fallback'); } else { this.remove(); }">`;
                 }
                 thumbHtml = imgTags + '<span class="fallback-dash">-</span>';
             }
