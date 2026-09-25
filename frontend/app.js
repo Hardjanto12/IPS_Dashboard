@@ -97,15 +97,32 @@ async function fetchTasks() {
 
         // Render all rows IMMEDIATELY
         tbody.innerHTML = '';
+        
+        function getThumbnailUrl(taskId) {
+            if (!taskId || taskId.length < 12) return null;
+            const match = taskId.match(/^(.*)(\d{4})(\d{4})(\d{4})$/);
+            if (match) {
+                const machineId = match[1];
+                const year = match[2];
+                const mmdd = match[3];
+                const seq = match[4];
+                return `http://192.111.111.80:6688/${machineId}/${year}/${mmdd}/${seq}/${taskId}_icon.jpg`;
+            }
+            return null;
+        }
+
         tasks.forEach((task, index) => {
             const tr = document.createElement('tr');
             const result = task.properties?.result;
-            // Use container_no if returned, otherwise show '...' to fetch in background
             const showNo = task.container_no && task.container_no !== '-' ? task.container_no : '...';
             const colorStyle = showNo === '...' ? 'color: var(--text-muted);' : '';
+            const thumbUrl = getThumbnailUrl(task.task_id);
+            const thumbHtml = thumbUrl ? `<img src="${thumbUrl}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${thumbUrl.replace('_icon', '')}', '_blank')" onerror="this.style.display='none'">` : '-';
+            
             tr.innerHTML = `
                 <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
                 <td>${index + 1}</td>
+                <td style="text-align: center;">${thumbHtml}</td>
                 <td><span class="uuid-cell">${task.task_id}</span></td>
                 <td id="container-cell-${task.id}" style="${colorStyle}">${showNo}</td>
                 <td style="text-transform: capitalize;">${task.model || '-'}</td>
@@ -813,3 +830,4 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
