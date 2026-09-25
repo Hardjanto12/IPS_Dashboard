@@ -364,7 +364,7 @@ def get_cached_container_no(obj_id: int):
                     continue
         return None
 
-def set_cached_container_no(obj_id: int, container_no: str):
+def set_cached_container_no(obj_id: int, container_no: str, thumbnail_path: str = None):
     if not container_no or (len(container_no.strip()) < 3 and container_no != "-"):
         return
     if container_no == "-":
@@ -374,14 +374,17 @@ def set_cached_container_no(obj_id: int, container_no: str):
         try:
             with _cache_lock:
                 conn = _get_cache_conn()
-                conn.execute("INSERT OR REPLACE INTO container_cache (obj_id, container_no, fetched_at) VALUES (?, ?, CURRENT_TIMESTAMP)", (obj_id, container_no))
+                conn.execute(
+                    "INSERT INTO container_cache (obj_id, container_no, thumbnail_path, fetched_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(obj_id) DO UPDATE SET container_no=excluded.container_no, thumbnail_path=excluded.thumbnail_path, fetched_at=CURRENT_TIMESTAMP",
+                    (obj_id, container_no, thumbnail_path)
+                )
                 conn.commit()
             break
         except Exception as e:
             if "database is locked" in str(e).lower():
                 logger.warning(f"Cache database locked (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(CONFIG["cache"]["retry_delay"] * (attempt + 1))  # Exponential backoff
+                    time.sleep(CONFIG["cache"]["retry_delay"] * (attempt + 1))
                     continue
             logger.error(f"Error writing cache: {e}")
 
@@ -1233,6 +1236,7 @@ if __name__ == "__main__":
         sys.stderr = DummyStream()
 
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT, log_config=None)
+
 
 
 
