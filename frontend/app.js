@@ -1,5 +1,16 @@
 // Auto-detect API base URL from current page location
 const API_BASE = window.location.origin;
+let GLOBAL_CONFIG = { mdst_base_url: 'http://192.111.111.80:6688' };
+async function fetchConfig() {
+    try {
+        const res = await fetch("$"/api/config);
+        if (res.ok) {
+            GLOBAL_CONFIG = await res.json();
+        }
+    } catch (e) {
+        console.error('Failed to load config', e);
+    }
+}
 const API_URL = `${API_BASE}/api/tasks`;
 const HEALTH_URL = `${API_BASE}/api/health`;
 const refreshBtn = document.getElementById('refresh-btn');
@@ -106,8 +117,9 @@ async function fetchTasks() {
             let thumbHtml = '<span class="fallback-dash">-</span>';
             if (task.thumbnail_path && task.thumbnail_path !== "NOT_FOUND") {
                 thumbHtml = `<img src="${task.thumbnail_path}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${task.thumbnail_path.replace('_gray', '')}', '_blank')" onerror="this.style.display='none'; this.nextElementSibling ? this.nextElementSibling.style.display='inline' : null"><span class="fallback-dash" style="display:none">-</span>`;
-            } else if (task.model === 'container' && task.task_id.startsWith('62001FS05')) {
+            } else if (task.model === 'container' && task.task_id && task.task_id.length === 21) {
                 const tId = task.task_id;
+                const scannerId = tId.substring(0, 9);
                 const year = tId.substring(9, 13);
                 const md = tId.substring(13, 17);
                 const seq = parseInt(tId.substring(17), 10);
@@ -115,8 +127,8 @@ async function fetchTasks() {
                 let imgTags = '';
                 for (let offset = 0; offset <= 15; offset++) {
                     const folderSeq = String(seq + offset).padStart(4, '0');
-                    const imgUrl = `http://192.111.111.80:6688/62001FS05/${year}/${md}/${folderSeq}/${tId}_gray.jpg`;
-                    const fullImgUrl = `http://192.111.111.80:6688/62001FS05/${year}/${md}/${folderSeq}/${tId}.jpg`;
+                    const imgUrl = `${GLOBAL_CONFIG.mdst_base_url}/${scannerId}/${year}/${md}/${folderSeq}/${tId}_gray.jpg`;
+                    const fullImgUrl = `${GLOBAL_CONFIG.mdst_base_url}/${scannerId}/${year}/${md}/${folderSeq}/${tId}.jpg`;
                     
                     imgTags += `<img src="${imgUrl}" data-full="${fullImgUrl}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px; display: none;" onload="this.style.display='inline'; Array.from(this.parentElement.children).forEach(c => { if(c !== this) c.style.display='none'; });" onclick="window.open(this.getAttribute('data-full'), '_blank')" onerror="this.remove()">`;
                 }
@@ -840,6 +852,11 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
+
+
+
+
 
 
 

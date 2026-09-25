@@ -1267,3 +1267,9 @@ def test_manifest(obj_id: int):
     return {"picno": container_picno, "res": db_res}
 
 
+
+@app.get("/api/config")
+def get_public_config():
+    return {
+        "mdst_base_url": CONFIG.get("mdst", {}).get("base_url", "http://192.111.111.80:6688")
+    }
