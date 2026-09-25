@@ -157,7 +157,7 @@ def get_container_from_idr_db(container_picno: str):
                     if match and match.group(1).strip():
                         res["container_no"] = match.group(1).strip()
                 if row.get("PATH"):
-                    res["thumbnail_path"] = "http://192.111.111.80:6688" + row["PATH"].strip() + container_picno + "_icon.jpg"
+                    res["thumbnail_path"] = "http://192.111.111.80:6688" + row["PATH"].strip() + container_picno + "_gray.jpg"
             return res
         except Exception as e:
             logger.warning(f"IDR SQL Server query error (attempt {attempt + 1}/{max_retries}): {e}")
@@ -1265,4 +1265,5 @@ def test_manifest(obj_id: int):
         if linked: container_picno = linked["container_id"]
     db_res = get_container_from_idr_db(container_picno)
     return {"picno": container_picno, "res": db_res}
+
 
