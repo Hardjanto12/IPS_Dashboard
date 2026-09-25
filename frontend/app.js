@@ -204,11 +204,11 @@ let currentSortDir = null; // 'asc' or 'desc'
 // Column index mapping for data-sort attributes
 const sortColMap = {
     'index': 1,
-    'task_id': 2,
-    'container_no': 3,
-    'model': 4,
-    'state': 5,
-    'create_time': 6
+    'task_id': 3,
+    'container_no': 4,
+    'model': 5,
+    'state': 6,
+    'create_time': 7
 };
 
 function sortTable(colKey) {
@@ -394,7 +394,7 @@ function performSearch() {
         if (row.cells.length < 8) return; // Skip error/info rows
         
         const taskId = row.querySelector('.uuid-cell')?.textContent.toLowerCase() || '';
-        const containerNo = row.cells[3]?.textContent.toLowerCase() || '';
+        const containerNo = row.cells[4]?.textContent.toLowerCase() || '';
         
         if (taskId.includes(query) || containerNo.includes(query)) {
             row.style.display = '';
@@ -443,8 +443,8 @@ async function applyDocHighlights() {
         const allRows = Array.from(tbody.querySelectorAll('tr'));
         if (allRows.length > 0 && allRows[0].cells.length >= 8) {
             allRows.sort((a, b) => {
-                const dateA = new Date(a.cells[6]?.textContent.trim());
-                const dateB = new Date(b.cells[6]?.textContent.trim());
+                const dateA = new Date(a.cells[7]?.textContent.trim());
+                const dateB = new Date(b.cells[7]?.textContent.trim());
                 return dateB - dateA;
             });
             allRows.forEach((row, idx) => {
@@ -489,7 +489,7 @@ async function applyDocHighlights() {
     const allRows = Array.from(tbody.querySelectorAll('tr'));
     allRows.forEach(row => {
         if (row.cells.length < 8) return; // Skip error/info rows
-        const containerNo = row.cells[3]?.textContent.trim().toUpperCase();
+        const containerNo = row.cells[4]?.textContent.trim().toUpperCase();
         
         let isMissing = false;
         
@@ -823,6 +823,8 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
+
 
 
 
