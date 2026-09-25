@@ -133,7 +133,7 @@ async function fetchTasks() {
         // Safe Fetching: Fetch container numbers ONLY for tasks that have finished scanning.
         // Doing this while state is 'scan.begin' will interrupt CCR image upload.
         const tasksToFetch = tasks.filter(task => 
-            (!task.container_no || task.container_no === '-') && 
+            (!task.container_no || task.container_no === '-' || !task.thumbnail_path) && 
             task.state !== 'scan.begin' &&
             !window.attemptedFetches.has(task.id)
         );
@@ -823,6 +823,7 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
 
 
 

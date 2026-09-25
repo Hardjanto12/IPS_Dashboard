@@ -157,7 +157,7 @@ def get_container_from_idr_db(container_picno: str):
                     if match and match.group(1).strip():
                         res["container_no"] = match.group(1).strip()
                 if row.get("PATH"):
-                    res["thumbnail_path"] = row["PATH"].strip() + container_picno + "_icon.jpg"
+                    res["thumbnail_path"] = "http://192.111.111.80:6688" + row["PATH"].strip() + container_picno + "_icon.jpg"
             return res
         except Exception as e:
             logger.warning(f"IDR SQL Server query error (attempt {attempt + 1}/{max_retries}): {e}")
@@ -1233,6 +1233,7 @@ if __name__ == "__main__":
         sys.stderr = DummyStream()
 
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT, log_config=None)
+
 
 
 
