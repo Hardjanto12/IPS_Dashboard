@@ -824,7 +824,7 @@ def get_task_details(obj_id: int):
 def get_task_manifest(obj_id: int):
     """Get Container No for the table view — reads directly from SQL Server (no SOAP)."""
     cached_data = get_cached_container_no(obj_id)
-    if cached_data:
+    if cached_data and (cached_data["thumbnail_path"] or cached_data["container_no"] == "NOT_FOUND"):
         c_no = cached_data["container_no"]
         return {
             "container_no": "-" if c_no == "NOT_FOUND" else c_no,
@@ -1244,4 +1244,25 @@ if __name__ == "__main__":
 
 
 
+
+
+
+@app.get("/api/test_manifest/{obj_id}")
+def test_manifest(obj_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM Object WHERE id = ?", (obj_id,))
+    obj = cursor.fetchone()
+    conn.close()
+    if not obj: return {"error": "not found"}
+    container_picno = obj["_id"] if obj["model"].lower() == "container" else None
+    if not container_picno:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT o._id as container_id FROM Link l JOIN Object o ON l.objId2 = o.id WHERE l.objId1 = ? AND l.model2 = 'container'", (obj_id,))
+        linked = cursor.fetchone()
+        conn.close()
+        if linked: container_picno = linked["container_id"]
+    db_res = get_container_from_idr_db(container_picno)
+    return {"picno": container_picno, "res": db_res}
 

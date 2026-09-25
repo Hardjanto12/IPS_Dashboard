@@ -143,7 +143,7 @@ async function fetchTasks() {
             const batchPromises = batch.map(async (task) => {
                 window.attemptedFetches.add(task.id);
                 try {
-                    const res = await fetch(`${API_BASE}/api/tasks/${task.id}/manifest`);
+                    const res = await fetch(`${API_BASE}/api/tasks/${task.id}/manifest?t=${Date.now()}`);
                     if (res.ok) {
                         const mData = await res.json();
                         const cell = document.getElementById(`container-cell-${task.id}`);
@@ -823,6 +823,7 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
 
 
 
