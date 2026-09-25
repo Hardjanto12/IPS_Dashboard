@@ -98,31 +98,18 @@ async function fetchTasks() {
         // Render all rows IMMEDIATELY
         tbody.innerHTML = '';
         
-        function getThumbnailUrl(taskId) {
-            if (!taskId || taskId.length < 12) return null;
-            const match = taskId.match(/^(.*)(\d{4})(\d{4})(\d{4})$/);
-            if (match) {
-                const machineId = match[1];
-                const year = match[2];
-                const mmdd = match[3];
-                const seq = match[4];
-                return `http://192.111.111.80:6688/${machineId}/${year}/${mmdd}/${seq}/${taskId}_icon.jpg`;
-            }
-            return null;
-        }
-
         tasks.forEach((task, index) => {
             const tr = document.createElement('tr');
             const result = task.properties?.result;
             const showNo = task.container_no && task.container_no !== '-' ? task.container_no : '...';
             const colorStyle = showNo === '...' ? 'color: var(--text-muted);' : '';
-            const thumbUrl = getThumbnailUrl(task.task_id);
+            const thumbUrl = task.thumbnail_path;
             const thumbHtml = thumbUrl ? `<img src="${thumbUrl}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${thumbUrl.replace('_icon', '')}', '_blank')" onerror="this.style.display='none'">` : '-';
             
             tr.innerHTML = `
                 <td><input type="checkbox" class="task-checkbox" data-id="${task.id}" ${result === 'succeed' ? 'disabled' : ''}></td>
                 <td>${index + 1}</td>
-                <td style="text-align: center;">${thumbHtml}</td>
+                <td id="thumb-cell-${task.id}" style="text-align: center;">${thumbHtml}</td>
                 <td><span class="uuid-cell">${task.task_id}</span></td>
                 <td id="container-cell-${task.id}" style="${colorStyle}">${showNo}</td>
                 <td style="text-transform: capitalize;">${task.model || '-'}</td>
@@ -163,6 +150,12 @@ async function fetchTasks() {
                         if (cell) {
                             cell.textContent = mData.container_no || '-';
                             cell.style.color = '';
+                        }
+                        if (mData.thumbnail_path) {
+                            const tCell = document.getElementById(`thumb-cell-${task.id}`);
+                            if (tCell && tCell.textContent === '-') {
+                                tCell.innerHTML = `<img src="${mData.thumbnail_path}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${mData.thumbnail_path.replace('_icon', '')}', '_blank')" onerror="this.style.display='none'">`;
+                            }
                         }
                         // Update the container_no on the task object in memory
                         task.container_no = mData.container_no || '-';
@@ -830,4 +823,8 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
+
+
+
 

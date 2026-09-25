@@ -458,3 +458,27 @@ tr.highlight-no-doc td {
 tr.highlight-no-doc:hover td {
     background-color: rgba(255, 51, 102, 0.25) !important;
 }
+
+th:last-child, td:last-child {
+    position: sticky;
+    right: 0;
+    background: var(--card-bg);
+    box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+    z-index: 1;
+}
+th:last-child {
+    background: #F8FAFC;
+    z-index: 2;
+}
+tr:hover td:last-child {
+    background: #F8FAFC;
+}
+
+
+tr.highlight-no-doc td:last-child {
+    background-color: #ffe6eb !important;
+}
+tr.highlight-no-doc:hover td:last-child {
+    background-color: #ffd6e0 !important;
+}
+

@@ -121,11 +121,50 @@ IDR_SQL_DB = CONFIG["sql_server"]["database"]
 IDR_SQL_USER = CONFIG["sql_server"]["username"]
 IDR_SQL_PASS = CONFIG["sql_server"]["password"]
 
-def get_container_from_idr_db(container_picno: str) -> Optional[str]:
-    """Read container_no directly from SQL Server idr_rdb — same method as official Nuctech IPS.
-    This does NOT touch ServiceIDR SOAP at all, so ServiceAssociate is never interrupted."""
+def get_container_from_idr_db(container_picno: str):
     if not container_picno:
-        return None
+        return {"container_no": None, "thumbnail_path": None}
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            conn = pymssql.connect(
+                server=IDR_SQL_SERVER,
+                user=IDR_SQL_USER,
+                password=IDR_SQL_PASS,
+                database=IDR_SQL_DB,
+                timeout=CONFIG["sql_server"]["timeout"],
+                login_timeout=CONFIG["sql_server"]["login_timeout"]
+            )
+            cursor = conn.cursor(as_dict=True)
+            cursor.execute("""
+                SELECT TOP 1 s.TYPEVALUE, i.PATH
+                FROM IDR_CHECK_UNIT cu
+                JOIN IDR_CHECK_SIIG cs ON cs.CHECKUNITID = cu.ID
+                JOIN IDR_SIIG s ON s.ID = cs.SIIGID
+                LEFT JOIN IDR_IMAGE i ON i.ID = cu.IMAGEID
+                WHERE cu.UNITID = %s AND s.TYPE = 'inputinfo'
+                ORDER BY cu.CHECKINTIME DESC
+            """, (container_picno,))
+            row = cursor.fetchone()
+            conn.close()
+            
+            res = {"container_no": None, "thumbnail_path": None}
+            if row:
+                if row.get("TYPEVALUE"):
+                    xml_str = row["TYPEVALUE"]
+                    match = re.search(r'<container_no>([^<]*)</container_no>', xml_str)
+                    if match and match.group(1).strip():
+                        res["container_no"] = match.group(1).strip()
+                if row.get("PATH"):
+                    res["thumbnail_path"] = row["PATH"].strip() + container_picno + "_icon.jpg"
+            return res
+        except Exception as e:
+            logger.warning(f"IDR SQL Server query error (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            return {"container_no": None, "thumbnail_path": None}
     
     max_retries = 3
     for attempt in range(max_retries):
@@ -286,7 +325,7 @@ def _get_cache_conn():
     if _cache_conn is None:
         _cache_conn = sqlite3.connect(get_cache_db_path(), check_same_thread=False)
         _cache_conn.execute("PRAGMA journal_mode=WAL")
-        _cache_conn.execute("PRAGMA wal_autocheckpoint=100")  # Checkpoint every 100 pages
+        _cache_conn.execute("PRAGMA wal_autocheckpoint=100")
         _cache_conn.execute("""
             CREATE TABLE IF NOT EXISTS container_cache (
                 obj_id INTEGER PRIMARY KEY,
@@ -294,6 +333,10 @@ def _get_cache_conn():
                 fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        try:
+            _cache_conn.execute("ALTER TABLE container_cache ADD COLUMN thumbnail_path TEXT")
+        except sqlite3.OperationalError:
+            pass
         _cache_conn.commit()
     return _cache_conn
 
@@ -303,25 +346,23 @@ try:
 except Exception as e:
     print(f"Error initializing cache database: {e}")
 
-def get_cached_container_no(obj_id: int) -> Optional[str]:
+def get_cached_container_no(obj_id: int):
     max_retries = CONFIG["cache"]["max_retries"]
     for attempt in range(max_retries):
         try:
             with _cache_lock:
                 cursor = _get_cache_conn().cursor()
-                # Use configurable TTL (default 30 minutes) to avoid stale cache
-                cursor.execute(f"SELECT container_no FROM container_cache WHERE obj_id = ? AND fetched_at >= datetime('now', '-{CONFIG['cache']['ttl_minutes']} minutes')", (obj_id,))
+                cursor.execute(f"SELECT container_no, thumbnail_path FROM container_cache WHERE obj_id = ? AND fetched_at >= datetime('now', '-{CONFIG['cache']['ttl_minutes']} minutes')", (obj_id,))
                 row = cursor.fetchone()
                 if row:
-                    return row[0]
+                    return {"container_no": row[0], "thumbnail_path": row[1]}
         except Exception as e:
             if "database is locked" in str(e).lower():
                 logger.warning(f"Cache database locked (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(CONFIG["cache"]["retry_delay"] * (attempt + 1))  # Exponential backoff
+                    time.sleep(CONFIG["cache"]["retry_delay"] * (attempt + 1))
                     continue
-            logger.error(f"Error reading cache: {e}")
-    return None
+        return None
 
 def set_cached_container_no(obj_id: int, container_no: str):
     if not container_no or (len(container_no.strip()) < 3 and container_no != "-"):
@@ -668,9 +709,13 @@ def get_tasks(limit: int = 100, status: str = "all"):
         tasks = []
         for row in rows:
             obj_id = row["id"]
-            cached_container = get_cached_container_no(obj_id)
+            cached_data = get_cached_container_no(obj_id)
+            cached_container = cached_data["container_no"] if cached_data else None
+            cached_thumb = cached_data["thumbnail_path"] if cached_data else None
+            
             display_container = cached_container if cached_container and cached_container != "NOT_FOUND" else "-"
             tasks.append({
+                "thumbnail_path": cached_thumb,
                 "id": obj_id,
                 "task_id": row["task_id"],
                 "model": row["model"],
@@ -775,9 +820,13 @@ def get_task_details(obj_id: int):
 @app.get("/api/tasks/{obj_id}/manifest")
 def get_task_manifest(obj_id: int):
     """Get Container No for the table view — reads directly from SQL Server (no SOAP)."""
-    cached_val = get_cached_container_no(obj_id)
-    if cached_val:
-        return {"container_no": "-" if cached_val == "NOT_FOUND" else cached_val}
+    cached_data = get_cached_container_no(obj_id)
+    if cached_data:
+        c_no = cached_data["container_no"]
+        return {
+            "container_no": "-" if c_no == "NOT_FOUND" else c_no,
+            "thumbnail_path": cached_data["thumbnail_path"]
+        }
     
     conn = None
     try:
@@ -804,14 +853,20 @@ def get_task_manifest(obj_id: int):
         
         # Read directly from SQL Server idr_rdb (same as official Nuctech IPS)
         # This does NOT use SOAP, so ServiceAssociate is never interrupted
-        container_no = get_container_from_idr_db(container_picno)
+        db_res = get_container_from_idr_db(container_picno)
+        container_no = db_res["container_no"]
+        thumbnail_path = db_res["thumbnail_path"]
         
         if container_no and len(container_no.strip()) >= 3:
-            set_cached_container_no(obj_id, container_no)
-            return {"container_no": container_no}
+            set_cached_container_no(obj_id, container_no, thumbnail_path)
+            return {"container_no": container_no, "thumbnail_path": thumbnail_path}
         else:
-            set_cached_container_no(obj_id, "-")
-            return {"container_no": "-"}
+            set_cached_container_no(obj_id, "-", thumbnail_path)
+            return {"container_no": "-", "thumbnail_path": thumbnail_path}
+        
+    except Exception as e:
+        print(f"Manifest endpoint error: {e}")
+        return {"container_no": "-", "thumbnail_path": None}
         
     except Exception as e:
         print(f"Manifest endpoint error: {e}")
@@ -1178,3 +1233,10 @@ if __name__ == "__main__":
         sys.stderr = DummyStream()
 
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT, log_config=None)
+
+
+
+
+
+
+
