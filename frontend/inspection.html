@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
@@ -93,7 +93,7 @@
             transition: all 0.2s ease;
         }
         
-        .form-group input:focus, .form-group textarea:focus {
+        .form-group input:focus-visible, .form-group textarea:focus-visible {
             outline: none;
             border-color: var(--primary);
         }
@@ -259,16 +259,16 @@
 <body>
     <div class="top-bar">
         <div class="top-bar-left">
-            <span class="material-symbols-outlined" style="color: var(--ink);">fact_check</span>
+            <span class="material-symbols-outlined" style="color: var(--ink);" aria-hidden="true">fact_check</span>
             <h2 style="font-size: 16px; font-weight: 600; color: var(--ink);">Check Container Data</h2>
-            <div style="background: var(--canvas-soft); color: var(--ink-muted); padding: 4px 12px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: 600; border: 1px solid var(--hairline);" id="task-id-badge">Loading...</div>
+            <div style="background: var(--canvas-soft); color: var(--ink-muted); padding: 4px 12px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: 600; border: 1px solid var(--hairline);" id="task-id-badge">Loading…</div>
         </div>
         <div style="display: flex; gap: 16px;">
             <button class="btn action-btn" onclick="window.close()">
-                <span class="material-symbols-outlined" style="font-size: 18px;">close</span> Exit
+                <span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">close</span> Exit
             </button>
             <button class="btn primary-btn" id="btn-save-submit" onclick="submitInspection()">
-                <span class="material-symbols-outlined" style="font-size: 18px;">save</span> Save & Submit
+                <span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">save</span> Save & Submit
             </button>
         </div>
     </div>
@@ -280,49 +280,49 @@
                 <div class="section-title">Manifest Information</div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label>Front Vehicle NO.:</label>
+                        <label for="inp-front-vehicle">Front Vehicle NO.:</label>
                         <input type="text" id="inp-front-vehicle">
                     </div>
                     <div class="form-group">
-                        <label>Container NO.:</label>
+                        <label for="inp-container-no">Container NO.:</label>
                         <input type="text" id="inp-container-no" placeholder="AXEU6032820">
                     </div>
                     
                     <div class="form-group">
-                        <label>Rear Vehicle NO.:</label>
+                        <label for="inp-rear-vehicle">Rear Vehicle NO.:</label>
                         <input type="text" id="inp-rear-vehicle">
                     </div>
                     <div class="form-group">
-                        <label>Country of Origin:</label>
+                        <label for="inp-country">Country of Origin:</label>
                         <input type="text" id="inp-country">
                     </div>
 
                     <div class="form-group">
-                        <label>Driver's Name:</label>
+                        <label for="inp-driver">Driver's Name:</label>
                         <input type="text" id="inp-driver">
                     </div>
                     <div class="form-group">
-                        <label>Scan Time:</label>
+                        <label for="inp-scan-time">Scan Time:</label>
                         <input type="text" id="inp-scan-time" readonly>
                     </div>
 
                     <div class="form-group">
-                        <label>Vehicle Enter Time:</label>
+                        <label for="inp-enter-time">Vehicle Enter Time:</label>
                         <input type="text" id="inp-enter-time" readonly>
                     </div>
                     <div class="form-group">
-                        <label>Vehicle Exit Time:</label>
+                        <label for="inp-exit-time">Vehicle Exit Time:</label>
                         <input type="text" id="inp-exit-time" readonly>
                     </div>
 
                     <div class="form-group">
-                        <label>Loadometer Weight:</label>
+                        <label for="inp-weight">Loadometer Weight:</label>
                         <input type="text" id="inp-weight">
                     </div>
                     <div></div>
 
                     <div class="form-group full-width">
-                        <label>Remark:</label>
+                        <label for="inp-remark">Remark:</label>
                         <textarea id="inp-remark" rows="2"></textarea>
                     </div>
                 </div>
@@ -341,7 +341,7 @@
                     </div>
 
                     <div class="form-group full-width">
-                        <label>Contents (Notes):</label>
+                        <label for="inp-contents">Contents (Notes):</label>
                         <textarea id="inp-contents" rows="4"></textarea>
                     </div>
                 </div>
@@ -352,13 +352,13 @@
         <div class="right-panel">
             <div class="main-image-viewer">
                 <span class="main-badge" id="main-img-badge">No Image</span>
-                <img id="main-image-display" src="" style="display: none;">
+                <img id="main-image-display" src="" style="display: none;" width="800" height="600" alt="Container inspection x-ray view">
                 <div id="main-image-loading" class="spinner" style="display: none;"></div>
             </div>
             
             <div class="carousel-container" id="carousel-container">
                 <div style="width: 100%; text-align: center; line-height: 100px; color: var(--ink-faint);">
-                    Memuat Galeri...
+                    Memuat Galeri…
                 </div>
             </div>
         </div>
