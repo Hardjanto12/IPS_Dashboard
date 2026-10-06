@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -31,6 +31,13 @@
                                 <span class="slider round"></span>
                             </label>
                             <span style="font-size: 14px; color: var(--ink-muted); font-weight: 500;">Auto Refresh</span>
+                        </div>
+                                                <div class="toggle-container" style="display: flex; align-items: center; gap: 8px;">
+                            <label class="switch">
+                                <input type="checkbox" id="thumbnail-toggle" aria-label="Show Thumbnails">
+                                <span class="slider round"></span>
+                            </label>
+                            <span style="font-size: 14px; color: var(--ink-muted); font-weight: 500;">Show Thumbnails</span>
                         </div>
                         <select id="limit-filter" class="custom-select" aria-label="Data limit filter">
                             <option value="50">50 Data</option>
@@ -107,7 +114,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 id="modal-title">Task Detail</h3>
-                <button id="modal-close" class="btn action-btn" onclick="closeModal()" aria-label="Close detail modal">✕</button>
+                <button id="modal-close" class="btn action-btn" onclick="closeModal()" aria-label="Close detail modal">âœ•</button>
             </div>
             <div id="modal-body" class="modal-body">
                 <div class="spinner"></div>
@@ -120,3 +127,5 @@
 </body>
 
 </html>
+
+

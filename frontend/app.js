@@ -1,4 +1,4 @@
-// Auto-detect API base URL from current page location
+﻿// Auto-detect API base URL from current page location
 const API_BASE = window.location.origin;
 let GLOBAL_CONFIG = { mdst_base_url: 'http://192.111.111.80:6688' };
 async function fetchConfig() {
@@ -17,6 +17,16 @@ const refreshBtn = document.getElementById('refresh-btn');
 const tbody = document.getElementById('task-body');
 const limitFilter = document.getElementById('limit-filter');
 const autoRefreshToggle = document.getElementById('auto-refresh-toggle');
+const thumbnailToggle = document.getElementById('thumbnail-toggle');
+window.showThumbnails = localStorage.getItem('show-thumbnails') !== 'false';
+if (thumbnailToggle) {
+    thumbnailToggle.checked = showThumbnails;
+    thumbnailToggle.addEventListener('change', (e) => {
+        window.showThumbnails = e.target.checked;
+        localStorage.setItem('show-thumbnails', window.showThumbnails);
+        fetchTasks();
+    });
+}
 let pollingInterval = null;
 
 // Format timestamp to readable date
@@ -115,6 +125,9 @@ async function fetchTasks() {
             const showNo = task.container_no && task.container_no !== '-' ? task.container_no : '...';
             const colorStyle = showNo === '...' ? 'color: var(--text-muted);' : '';
             let thumbHtml = '<span class="fallback-dash">-</span>';
+            if (!window.showThumbnails) {
+                thumbHtml = '<span class="fallback-dash" style="font-size: 12px; background: var(--canvas-soft); padding: 4px 8px; border-radius: 4px; color: var(--ink-faint);">Disabled</span>';
+            } else 
             if (task.thumbnail_path && task.thumbnail_path !== "NOT_FOUND") {
                 thumbHtml = `<img src="${task.thumbnail_path}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${task.thumbnail_path.replace('_gray', '')}', '_blank')" onerror="this.style.display='none'; this.nextElementSibling ? this.nextElementSibling.style.display='inline' : null"><span class="fallback-dash" style="display:none">-</span>`;
             } else if (task.model === 'container' && task.task_id && task.task_id.length === 21) {
@@ -181,7 +194,7 @@ async function fetchTasks() {
                             cell.textContent = mData.container_no || '-';
                             cell.style.color = '';
                         }
-                        if (mData.thumbnail_path) {
+                        if (mData.thumbnail_path && window.showThumbnails) {
                             const tCell = document.getElementById(`thumb-cell-${task.id}`);
                             if (tCell && tCell.querySelector('.fallback-dash') && tCell.querySelector('.fallback-dash').style.display !== 'none') {
                                 tCell.innerHTML = `<img src="${mData.thumbnail_path}" style="height: 30px; border-radius: 4px; cursor: pointer; background: #2a2a2a; object-fit: cover; width: 60px;" onclick="window.open('${mData.thumbnail_path.replace('_gray', '')}', '_blank')" onerror="this.style.display='none'">`;
@@ -719,7 +732,7 @@ async function openDetails(objId) {
         // Section 1: Task Info
         html += `
         <div class="detail-section">
-            <h4>📋 Informasi Task</h4>
+            <h4>ðŸ“‹ Informasi Task</h4>
             <div class="detail-grid">
                 <div class="detail-item">
                     <span class="label">Task ID</span>
@@ -739,7 +752,7 @@ async function openDetails(objId) {
                 </div>
                 <div class="detail-item">
                     <span class="label">Hasil (Result)</span>
-                    <span class="value">${props.result ? '✅ ' + props.result : '⏳ Belum ada'}</span>
+                    <span class="value">${props.result ? 'âœ… ' + props.result : 'â³ Belum ada'}</span>
                 </div>
             </div>
         </div>`;
@@ -748,8 +761,8 @@ async function openDetails(objId) {
         if (container) {
             html += `
             <div class="detail-section">
-                <h4>📦 Kontainer Terkait</h4>
-                <div class="container-badge">🚛 ${container.container_id}</div>
+                <h4>ðŸ“¦ Kontainer Terkait</h4>
+                <div class="container-badge">ðŸš› ${container.container_id}</div>
             </div>`;
         }
         
@@ -758,7 +771,7 @@ async function openDetails(objId) {
         if (manifest) {
             html += `
             <div class="detail-section">
-                <h4 style="color: var(--accent);">📄 Data Manifest / EDI</h4>
+                <h4 style="color: var(--accent);">ðŸ“„ Data Manifest / EDI</h4>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <span class="label">Container No</span>
@@ -789,7 +802,7 @@ async function openDetails(objId) {
         if (ips) {
             html += `
             <div class="detail-section">
-                <h4 style="color: var(--status-ready);">🔍 Hasil Inspeksi IPS</h4>
+                <h4 style="color: var(--status-ready);">ðŸ” Hasil Inspeksi IPS</h4>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <span class="label">Waktu Scan X-Ray</span>
@@ -822,7 +835,7 @@ async function openDetails(objId) {
         // Section 5: State Timeline
         html += `
         <div class="detail-section">
-            <h4>🔄 Riwayat Status (State Timeline)</h4>
+            <h4>ðŸ”„ Riwayat Status (State Timeline)</h4>
             <div class="state-timeline">`;
         
         states.forEach((s) => {
@@ -842,7 +855,7 @@ async function openDetails(objId) {
         html += `</div></div>
         <div style="margin-top: 20px; display: flex; justify-content: flex-end; border-top: 1px solid var(--border-color); padding-top: 15px;">
             <button class="btn primary-btn" onclick="manualSubmitTask(${task.id})">
-                ✅ Auto-Submit "No Suspect"
+                âœ… Auto-Submit "No Suspect"
             </button>
         </div>`;
         
@@ -853,6 +866,8 @@ async function openDetails(objId) {
         modalBody.innerHTML = '<p style="color: #ff3366;">Gagal mengambil detail. Pastikan backend berjalan.</p>';
     }
 }
+
+
 
 
 
