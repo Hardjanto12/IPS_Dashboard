@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sqlite3
 import json
 import re
@@ -157,7 +157,7 @@ def get_container_from_idr_db(container_picno: str):
                     if match and match.group(1).strip():
                         res["container_no"] = match.group(1).strip()
                 if row.get("PATH"):
-                    res["thumbnail_path"] = "http://192.111.111.80:6688" + row["PATH"].strip() + container_picno + "_gray.jpg"
+                    res["thumbnail_path"] = CONFIG["mdst"]["base_url"] + row["PATH"].strip() + container_picno + "_icon.jpg"
             return res
         except Exception as e:
             logger.warning(f"IDR SQL Server query error (attempt {attempt + 1}/{max_retries}): {e}")
@@ -822,7 +822,7 @@ def get_task_details(obj_id: int):
 
 @app.get("/api/tasks/{obj_id}/manifest")
 def get_task_manifest(obj_id: int):
-    """Get Container No for the table view — reads directly from SQL Server (no SOAP)."""
+    """Get Container No for the table view â€” reads directly from SQL Server (no SOAP)."""
     cached_data = get_cached_container_no(obj_id)
     if cached_data and (cached_data["thumbnail_path"] or cached_data["container_no"] == "NOT_FOUND"):
         c_no = cached_data["container_no"]
@@ -1273,3 +1273,4 @@ def get_public_config():
     return {
         "mdst_base_url": CONFIG.get("mdst", {}).get("base_url", "http://192.111.111.80:6688")
     }
+
